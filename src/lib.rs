@@ -44,6 +44,7 @@ impl Application {
     pub async fn run(self) -> anyhow::Result<()> {
         let listener = tokio::net::TcpListener::bind(self.address).await?;
         let app = axum::Router::new();
+        tracing::info!(address = ?self.address, "starting server");
         axum::serve(listener, app).await.context("server crashed")
     }
 }
