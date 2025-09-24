@@ -1,5 +1,7 @@
 use anyhow::Context;
 
+mod handler;
+
 const DEFAULT_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 const DEFAULT_PORT: u16 = 3000;
 
@@ -43,7 +45,7 @@ pub struct Application {
 impl Application {
     pub async fn run(self) -> anyhow::Result<()> {
         let listener = tokio::net::TcpListener::bind(self.address).await?;
-        let app = axum::Router::new();
+        let app = handler::build();
         tracing::info!(address = ?self.address, "starting server");
         axum::serve(listener, app).await.context("server crashed")
     }
