@@ -1,6 +1,6 @@
 use axum::routing::get;
 
-use crate::{adapter_http_server::ServerState, domain::prelude::AptRepository};
+use crate::adapter_http_server::ServerState;
 
 mod inrelease;
 mod packages;
@@ -9,7 +9,7 @@ mod release;
 
 pub fn build<AR>() -> axum::Router<ServerState<AR>>
 where
-    AR: AptRepository + Clone,
+    AR: crate::domain::prelude::AptRepositoryReader + Clone,
 {
     axum::Router::new()
         .route("/dists/stable/Release", get(release::handler))

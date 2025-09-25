@@ -1,19 +1,24 @@
+mod releases;
+
 pub struct Config {
-    #[allow(unused, reason = "preparation")]
-    token: String,
+    token: secrecy::SecretString,
 }
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         Ok(Config {
-            token: crate::with_env("GITHUB_TOKEN")?,
+            token: secrecy::SecretString::from(crate::with_env("GITHUB_TOKEN")?),
         })
     }
 
     pub fn build(self) -> anyhow::Result<Client> {
-        Ok(Client)
+        Ok(Client {
+            inner: octocrab::Octocrab::builder().build()?,
+        })
     }
 }
 
-#[derive(Debug)]
-pub struct Client;
+#[derive(Clone, Debug)]
+pub struct Client {
+    inner: octocrab::Octocrab,
+}

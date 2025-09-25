@@ -1,7 +1,5 @@
 use anyhow::Context;
 
-use crate::domain::prelude::AptRepository;
-
 mod handler;
 
 const DEFAULT_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
@@ -49,7 +47,7 @@ impl<AR> ServerBuilder<AR> {
 
 impl<AR> ServerBuilder<AR>
 where
-    AR: Clone + AptRepository,
+    AR: Clone + crate::domain::prelude::AptRepositoryReader,
 {
     pub fn with_apt_repository(self, value: AR) -> Self {
         Self {
@@ -61,7 +59,7 @@ where
 
 impl<AR> ServerBuilder<AR>
 where
-    AR: Clone + AptRepository,
+    AR: Clone + crate::domain::prelude::AptRepositoryReader,
 {
     pub fn build(self) -> anyhow::Result<Server> {
         let router = handler::build().with_state(ServerState {
@@ -95,7 +93,7 @@ impl Server {
 #[derive(Clone)]
 struct ServerState<AR>
 where
-    AR: Clone + AptRepository,
+    AR: Clone + crate::domain::prelude::AptRepositoryReader,
 {
     #[allow(unused, reason = "early")]
     apt_repository: AR,

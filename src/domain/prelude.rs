@@ -1,7 +1,11 @@
 use super::entity::*;
 
+pub trait AptRepositoryWriter: Send + Sync + 'static {
+    fn synchronize(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
 /// Represents a logical APT repository (suite/component/arch).
-pub trait AptRepository: Send + Sync + 'static {
+pub trait AptRepositoryReader: Send + Sync + 'static {
     /// List all available packages for a given architecture.
     fn list_packages(
         &self,
@@ -23,7 +27,7 @@ mockall::mock! {
         fn clone(&self) -> Self;
     }
 
-    impl AptRepository for AptRepositoryService {
+    impl AptRepositoryReader for AptRepositoryService {
         /// List all available packages for a given architecture.
         fn list_packages(
             &self,
@@ -56,7 +60,10 @@ pub trait PackageSource: Send + Sync + 'static {
     ) -> impl Future<Output = anyhow::Result<Vec<DebAsset>>> + Send;
 
     /// Download a .deb asset.
-    fn fetch_deb(&self, asset: &DebAsset) -> impl Future<Output = anyhow::Result<Vec<u8>>> + Send;
+    fn fetch_deb(
+        &self,
+        asset: &DebAsset,
+    ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
 }
 
 /// Caches package metadata and assets.

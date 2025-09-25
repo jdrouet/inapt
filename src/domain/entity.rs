@@ -33,7 +33,10 @@ pub struct ReleaseMetadata {
 /// Represents a .deb asset (source, filename, URL, etc.).
 #[derive(Debug, Clone)]
 pub struct DebAsset {
-    pub repo: String,
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub release_id: u64,
+    pub asset_id: u64,
     pub filename: String,
     pub url: String,
     pub size: u64,
