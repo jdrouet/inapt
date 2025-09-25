@@ -1,5 +1,7 @@
 use anyhow::Context;
 
+use crate::domain::prelude::AptRepository;
+
 mod handler;
 
 const DEFAULT_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
@@ -18,9 +20,58 @@ impl Config {
         })
     }
 
-    pub fn build(self) -> anyhow::Result<Server> {
-        Ok(Server {
+    pub fn builder<AR>(self) -> anyhow::Result<ServerBuilder<AR>> {
+        Ok(ServerBuilder {
             address: std::net::SocketAddr::from((self.address, self.port)),
+            apt_repository: None,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct ServerBuilder<AR> {
+    address: std::net::SocketAddr,
+    apt_repository: Option<AR>,
+}
+
+#[cfg(test)]
+impl<AR> ServerBuilder<AR> {
+    pub fn test() -> Self {
+        Self {
+            address: std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                1234,
+            ),
+            apt_repository: None,
+        }
+    }
+}
+
+impl<AR> ServerBuilder<AR>
+where
+    AR: Clone + AptRepository,
+{
+    pub fn with_apt_repository(self, value: AR) -> Self {
+        Self {
+            address: self.address,
+            apt_repository: Some(value),
+        }
+    }
+}
+
+impl<AR> ServerBuilder<AR>
+where
+    AR: Clone + AptRepository,
+{
+    pub fn build(self) -> anyhow::Result<Server> {
+        let router = handler::build().with_state(ServerState {
+            apt_repository: self
+                .apt_repository
+                .ok_or_else(|| anyhow::anyhow!("apt_repository service not defined"))?,
+        });
+        Ok(Server {
+            address: self.address,
+            router,
         })
     }
 }
@@ -28,13 +79,24 @@ impl Config {
 #[derive(Debug)]
 pub struct Server {
     address: std::net::SocketAddr,
+    router: axum::Router,
 }
 
 impl Server {
     pub async fn run(self) -> anyhow::Result<()> {
         let listener = tokio::net::TcpListener::bind(self.address).await?;
-        let app = handler::build();
         tracing::info!(address = ?self.address, "starting server");
-        axum::serve(listener, app).await.context("server crashed")
+        axum::serve(listener, self.router)
+            .await
+            .context("server crashed")
     }
+}
+
+#[derive(Clone)]
+struct ServerState<AR>
+where
+    AR: Clone + AptRepository,
+{
+    #[allow(unused, reason = "early")]
+    apt_repository: AR,
 }

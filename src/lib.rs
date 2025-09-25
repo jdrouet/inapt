@@ -1,5 +1,7 @@
 use anyhow::Context;
 
+use crate::domain::AptRepositoryService;
+
 mod adapter_github;
 mod adapter_http_server;
 mod domain;
@@ -37,7 +39,11 @@ impl Config {
     pub fn build(self) -> anyhow::Result<Application> {
         Ok(Application {
             github: self.github.build()?,
-            http_server: self.http_server.build()?,
+            http_server: self
+                .http_server
+                .builder()?
+                .with_apt_repository(AptRepositoryService {})
+                .build()?,
         })
     }
 }
