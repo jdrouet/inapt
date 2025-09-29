@@ -1,0 +1,9 @@
+services:
+  inapt:
+    build: .
+    environment:
+      RUST_LOG: debug
+  runner:
+    image: debian
+    depends_on:
+      - inapt

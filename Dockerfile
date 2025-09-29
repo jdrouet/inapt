@@ -40,7 +40,12 @@ RUN --mount=type=cache,target=$CARGO_HOME/git,sharing=locked \
     --mount=type=cache,target=/core/target/release/incremental,sharing=locked \
     cargo build --release --package inapt --offline
 
-FROM scratch
+FROM debian
+
+RUN apt-get update \
+    && apt-get install -y ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
 ENV ADDRESS=0.0.0.0
 ENV PORT=3000
