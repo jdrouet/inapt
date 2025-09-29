@@ -156,16 +156,16 @@ impl ReleaseMetadataBuilder {
             origin: self.config.origin.clone(),
             label: self.config.label.clone(),
             suite: self.config.suite.clone(),
-            version: "0.1.0".into(),
+            version: self.config.version.clone(),
             codename: self.config.codename.clone(),
-            date: "now".into(),
+            date: chrono::Utc::now(),
             architectures: self
                 .architectures
                 .into_iter()
                 .map(|(name, values)| values.build(name))
                 .collect::<Result<_, _>>()?,
             components: vec!["main".into()],
-            description: "Proxy to GitHub releases".into(),
+            description: self.config.description.clone(),
         })
     }
 }
@@ -199,16 +199,16 @@ impl ArchitectureMetadataBuilder {
             .enumerate()
         {
             if index > 0 {
-                plain_sha256_hasher.write(b"\n")?;
-                plain_md5_hasher.write(b"\n")?;
-                gz_encoder.write(b"\n")?;
+                let _ = plain_sha256_hasher.write(b"\n")?;
+                let _ = plain_md5_hasher.write(b"\n")?;
+                let _ = gz_encoder.write(b"\n")?;
                 plain_size += 1;
             }
             let display = package.metadata.serialize().to_string();
             plain_size += display.len() as u64;
-            plain_sha256_hasher.write(display.as_bytes())?;
-            plain_md5_hasher.write(display.as_bytes())?;
-            gz_encoder.write(display.as_bytes())?;
+            let _ = plain_sha256_hasher.write(display.as_bytes())?;
+            let _ = plain_md5_hasher.write(display.as_bytes())?;
+            let _ = gz_encoder.write(display.as_bytes())?;
             packages.push(package);
         }
 

@@ -72,7 +72,7 @@ mod tests {
                     suite: "Stable".into(),
                     version: "1.2.3".into(),
                     codename: "Whatever".into(),
-                    date: "Tue, 04 Jun 2024 12:34:56 UTC".into(),
+                    date: chrono::DateTime::from_timestamp(1286705410, 0).unwrap(),
                     architectures: Vec::default(),
                     components: vec!["main".into()],
                     description: "Mirror to GitHub".into(),
@@ -83,7 +83,7 @@ mod tests {
         let value = super::handler(axum::extract::State(state)).await.unwrap();
         assert_eq!(
             value,
-            "Origin: GitHub\nLabel: Debian\nSuite: Stable\nVersion: 1.2.3\nCodename: Whatever\n"
+            "Origin: GitHub\nLabel: Debian\nSuite: Stable\nVersion: 1.2.3\nCodename: Whatever\nComponents: main\nDate: Sun, 10 Oct 2010 10:10:10 +0000\nDescription: Mirror to GitHub\n"
         );
     }
 }

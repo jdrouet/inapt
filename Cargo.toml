@@ -13,6 +13,7 @@ readme = "readme.md"
 anyhow = { version = "1.0" }
 ar = "0.9"
 axum = { version = "0.8", default-features = false, features = ["http2", "tokio"] }
+chrono = { version = "0.4.42", default-features = false, features = ["now"] }
 flate2 = "1"     # for .gz
 futures = "0.3"
 hex = "0.4"

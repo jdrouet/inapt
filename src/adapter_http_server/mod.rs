@@ -33,19 +33,6 @@ pub struct ServerBuilder<AR> {
     apt_repository: Option<AR>,
 }
 
-#[cfg(test)]
-impl<AR> ServerBuilder<AR> {
-    pub fn test() -> Self {
-        Self {
-            address: std::net::SocketAddr::new(
-                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-                1234,
-            ),
-            apt_repository: None,
-        }
-    }
-}
-
 impl<AR> ServerBuilder<AR>
 where
     AR: Clone + crate::domain::prelude::AptRepositoryReader,

@@ -4,6 +4,7 @@ use std::{collections::HashMap, fmt::Write};
 #[derive(Debug, Clone)]
 pub struct Package {
     pub metadata: PackageMetadata,
+    #[allow(unused, reason = "TBD")]
     pub asset: DebAsset,
 }
 
@@ -11,6 +12,7 @@ pub struct Package {
 #[derive(Debug, Clone)]
 pub struct PackageMetadata {
     pub control: PackageControl,
+    #[allow(unused, reason = "TBD")]
     pub file: FileMetadata,
 }
 
@@ -33,7 +35,7 @@ impl<'a> std::fmt::Display for SerializedPackageMetadata<'a> {
         writeln!(f, "Maintainer: {}", self.0.control.maintainer)?;
         write_multiline(f, "Description", &self.0.control.description)?;
         for (name, values) in self.0.control.others.iter() {
-            write_multiline(f, name, &values)?;
+            write_multiline(f, name, values)?;
         }
         Ok(())
     }
@@ -77,6 +79,7 @@ pub struct PackageControl {
 
 /// Metadata extracted from a .deb file's control section.
 #[derive(Debug, Clone)]
+#[allow(unused, reason = "TBD")]
 pub struct FileMetadata {
     pub size: u64,
     pub sha256: String,
@@ -90,7 +93,7 @@ pub struct ReleaseMetadata {
     pub suite: String,
     pub version: String,
     pub codename: String,
-    pub date: String,
+    pub date: chrono::DateTime<chrono::Utc>,
     pub architectures: Vec<ArchitectureMetadata>,
     pub components: Vec<String>,
     pub description: String,
@@ -111,6 +114,9 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
         writeln!(f, "Suite: {}", self.0.suite)?;
         writeln!(f, "Version: {}", self.0.version)?;
         writeln!(f, "Codename: {}", self.0.codename)?;
+        writeln!(f, "Components: {}", self.0.components.join(" "))?;
+        writeln!(f, "Date: {}", self.0.date.to_rfc2822())?;
+        writeln!(f, "Description: {}", self.0.description)?;
         if !self.0.architectures.is_empty() {
             f.write_str("\n")?;
             writeln!(f, "MD5Sum:")?;
@@ -159,6 +165,7 @@ pub struct ArchitectureMetadata {
 
 /// Represents a .deb asset (source, filename, URL, etc.).
 #[derive(Debug, Clone)]
+#[allow(unused, reason = "TBD")]
 pub struct DebAsset {
     pub repo_owner: String,
     pub repo_name: String,
