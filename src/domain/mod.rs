@@ -5,6 +5,7 @@ use std::{
 };
 
 use flate2::{Compression, write::GzEncoder};
+use futures::{StreamExt, TryStreamExt};
 use sha2::Digest;
 
 use crate::domain::entity::Package;
@@ -69,15 +70,34 @@ where
     RS: crate::domain::prelude::ReleaseStore,
     DE: crate::domain::prelude::DebMetadataExtractor,
 {
+    async fn fetch_package(&self, asset: entity::DebAsset) -> anyhow::Result<entity::Package> {
+        let deb_file = self.package_source.fetch_deb(&asset).await?;
+        let metadata = self.deb_extractor.extract_metadata(deb_file.path()).await?;
+        Ok(entity::Package { metadata, asset })
+    }
+}
+
+impl<PS, RS, DE> AptRepositoryService<PS, RS, DE>
+where
+    PS: crate::domain::prelude::PackageSource,
+    RS: crate::domain::prelude::ReleaseStore,
+    DE: crate::domain::prelude::DebMetadataExtractor,
+{
     #[tracing::instrument(skip(self), err(Debug))]
     async fn synchronize_repo(&self, repo: &str) -> anyhow::Result<()> {
+        tracing::info!("listing assets");
         let list = self.package_source.list_deb_assets(repo).await?;
+        let list = futures::stream::iter(
+            list.into_iter()
+                .map(|asset| async move { self.fetch_package(asset).await }),
+        )
+        .buffer_unordered(5)
+        .try_collect::<Vec<_>>()
+        .await?;
         let mut builder = ReleaseMetadataBuilder::new(self.config.clone());
-        for asset in list {
-            let deb_file = self.package_source.fetch_deb(&asset).await?;
-            let metadata = self.deb_extractor.extract_metadata(deb_file.path()).await?;
-            builder.insert(entity::Package { metadata, asset });
-        }
+        list.into_iter().for_each(|item| {
+            builder.insert(item);
+        });
         self.release_storage.insert(builder.build()?).await;
         Ok(())
     }
