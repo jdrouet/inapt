@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Write};
+use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
 /// Package
 #[derive(Debug, Clone)]
@@ -99,15 +99,15 @@ pub struct FileMetadata {
 /// Metadata for the Release file.
 #[derive(Debug, Clone)]
 pub struct ReleaseMetadata {
-    pub origin: String,
-    pub label: String,
-    pub suite: String,
-    pub version: String,
-    pub codename: String,
+    pub origin: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub suite: Cow<'static, str>,
+    pub version: Cow<'static, str>,
+    pub codename: Cow<'static, str>,
     pub date: chrono::DateTime<chrono::Utc>,
     pub architectures: Vec<ArchitectureMetadata>,
     pub components: Vec<String>,
-    pub description: String,
+    pub description: Cow<'static, str>,
 }
 
 impl ReleaseMetadata {

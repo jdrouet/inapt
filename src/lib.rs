@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{borrow::Cow, marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 
@@ -15,6 +15,16 @@ fn maybe_env(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
+fn with_env_or<T>(name: &str, default_value: T) -> Cow<'static, str>
+where
+    T: Into<Cow<'static, str>>,
+{
+    std::env::var(name)
+        .ok()
+        .map(Cow::Owned)
+        .unwrap_or_else(|| default_value.into())
+}
+
 fn with_env_as_or<T>(name: &str, default_value: T) -> anyhow::Result<T>
 where
     T: std::str::FromStr,
@@ -28,7 +38,19 @@ where
         .with_context(|| format!("unable to parse value from {name:?}"))
 }
 
+fn with_env_as_many(name: &str, delim: &str) -> Vec<String> {
+    let Ok(value) = std::env::var(name) else {
+        tracing::warn!("no repository configured");
+        return Vec::default();
+    };
+    value
+        .split(delim)
+        .map(|item| item.trim().to_string())
+        .collect()
+}
+
 pub struct Config {
+    config: domain::Config,
     github: adapter_github::Config,
     http_server: adapter_http_server::Config,
     worker: adapter_worker::Config,
@@ -37,6 +59,7 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> anyhow::Result<Config> {
         Ok(Self {
+            config: domain::Config::from_env()?,
             github: adapter_github::Config::from_env()?,
             http_server: adapter_http_server::Config::from_env()?,
             worker: adapter_worker::Config::from_env()?,
@@ -49,15 +72,7 @@ impl Config {
         let apt_repository_service = AptRepositoryService {
             package_source: github.clone(),
             release_storage,
-            config: Arc::from(crate::domain::Config {
-                origin: "GitHub".into(),
-                label: "Debian".into(),
-                suite: "stable".into(),
-                version: "0.1.0".into(),
-                codename: "cucumber".into(),
-                description: "GitHub releases proxy".into(),
-                repositories: vec!["jdrouet/mrml".to_string(), "helix-editor/helix".to_string()],
-            }),
+            config: Arc::from(self.config),
             clock: PhantomData::<chrono::Utc>,
             deb_extractor: DebReader,
         };

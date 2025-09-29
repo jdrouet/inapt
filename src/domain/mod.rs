@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap},
     io::Write,
     marker::PhantomData,
@@ -17,22 +18,36 @@ pub(crate) mod prelude;
 #[derive(Debug)]
 pub struct Config {
     // Origin: Debian
-    pub origin: String,
+    pub origin: Cow<'static, str>,
     // Label: Debian
-    pub label: String,
+    pub label: Cow<'static, str>,
     // Suite: stable
-    pub suite: String,
+    pub suite: Cow<'static, str>,
     // Version: 12.5
-    pub version: String,
+    pub version: Cow<'static, str>,
     // Codename: bookworm
-    pub codename: String,
+    pub codename: Cow<'static, str>,
     // Date: Tue, 04 Jun 2024 12:34:56 UTC
     // pub date: String,
     // Architectures: amd64 arm64
     // Components: main contrib non-free
-    pub description: String,
+    pub description: Cow<'static, str>,
     // Description: Debian 12.5 Release
     pub repositories: Vec<String>,
+}
+
+impl Config {
+    pub fn from_env() -> anyhow::Result<Self> {
+        Ok(Self {
+            origin: crate::with_env_or("REPO_ORIGIN", "GitHub releases"),
+            label: crate::with_env_or("REPO_LABEL", "Debian"),
+            suite: crate::with_env_or("REPO_SUITE", "stable"),
+            version: crate::with_env_or("REPO_VERSION", env!("CARGO_PKG_VERSION")),
+            codename: crate::with_env_or("REPO_CODENAME", "cucumber"),
+            description: crate::with_env_or("REPO_DESCRIPTION", "GitHub releases proxy"),
+            repositories: crate::with_env_as_many("REPO_REPOSITORIES", ","),
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -271,12 +286,12 @@ mod tests {
     #[test]
     fn should_build_realease_metadata() {
         let config = Arc::new(Config {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
-            description: "Test repo".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
             repositories: vec!["testrepo".to_string()],
         });
         let mut builder = ReleaseMetadataBuilder::new(config);
@@ -335,12 +350,12 @@ SHA256:
     #[tokio::test]
     async fn should_do_synchronize_successfully() {
         let config = Arc::new(Config {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
-            description: "Test repo".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
             repositories: vec!["testrepo".to_string()],
         });
 
@@ -412,12 +427,12 @@ SHA256:
     #[tokio::test]
     async fn should_do_synchronize_with_error() {
         let config = Arc::new(Config {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
-            description: "Test repo".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
             repositories: vec!["testrepo".to_string()],
         });
 
@@ -458,12 +473,12 @@ SHA256:
     #[tokio::test]
     async fn should_do_list_packages_successfully() {
         let config = Arc::new(Config {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
-            description: "Test repo".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
             repositories: vec!["testrepo".to_string()],
         });
 
@@ -507,15 +522,15 @@ SHA256:
             packages: vec![package.clone()],
         };
         let release_meta = crate::domain::entity::ReleaseMetadata {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
             date: chrono::Utc::now(),
             architectures: vec![arch_meta],
             components: vec!["main".to_string()],
-            description: "Test repo".to_string(),
+            description: "Test repo".into(),
         };
         mock_release_store.expect_fetch().returning(move || {
             let release_meta = release_meta.clone();
@@ -540,12 +555,12 @@ SHA256:
     #[tokio::test]
     async fn should_do_list_packages_empty() {
         let config = Arc::new(Config {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
-            description: "Test repo".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
             repositories: vec!["testrepo".to_string()],
         });
 
@@ -571,26 +586,26 @@ SHA256:
     #[tokio::test]
     async fn should_do_release_metadata_successfully() {
         let config = Arc::new(Config {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
-            description: "Test repo".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
             repositories: vec!["testrepo".to_string()],
         });
 
         let mut mock_release_store = MockReleaseStore::new();
         let release_meta = crate::domain::entity::ReleaseMetadata {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
             date: chrono::Utc::now(),
             architectures: vec![],
             components: vec!["main".to_string()],
-            description: "Test repo".to_string(),
+            description: "Test repo".into(),
         };
         mock_release_store.expect_fetch().returning(move || {
             let release_meta = release_meta.clone();
@@ -613,12 +628,12 @@ SHA256:
     #[tokio::test]
     async fn should_do_release_metadata_not_found() {
         let config = Arc::new(Config {
-            origin: "TestOrigin".to_string(),
-            label: "TestLabel".to_string(),
-            suite: "test".to_string(),
-            version: "0.1.0".to_string(),
-            codename: "testcode".to_string(),
-            description: "Test repo".to_string(),
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
             repositories: vec!["testrepo".to_string()],
         });
 
