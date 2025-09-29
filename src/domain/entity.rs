@@ -96,6 +96,55 @@ pub struct ReleaseMetadata {
     pub description: String,
 }
 
+impl ReleaseMetadata {
+    pub fn serialize(&self) -> SerializedReleaseMetadata<'_> {
+        SerializedReleaseMetadata(self)
+    }
+}
+
+pub struct SerializedReleaseMetadata<'a>(&'a ReleaseMetadata);
+
+impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Origin: {}", self.0.origin)?;
+        writeln!(f, "Label: {}", self.0.label)?;
+        writeln!(f, "Suite: {}", self.0.suite)?;
+        writeln!(f, "Version: {}", self.0.version)?;
+        writeln!(f, "Codename: {}", self.0.codename)?;
+        if !self.0.architectures.is_empty() {
+            f.write_str("\n")?;
+            writeln!(f, "MD5Sum:")?;
+            for arch in self.0.architectures.iter() {
+                writeln!(
+                    f,
+                    " {} {} main/binary-{}/Packages",
+                    arch.plain_md5, arch.plain_size, arch.name
+                )?;
+                writeln!(
+                    f,
+                    " {} {} main/binary-{}/Packages.gz",
+                    arch.compressed_md5, arch.compressed_size, arch.name
+                )?;
+            }
+            f.write_str("\n")?;
+            writeln!(f, "SHA256:")?;
+            for arch in self.0.architectures.iter() {
+                writeln!(
+                    f,
+                    " {} {} main/binary-{}/Packages",
+                    arch.plain_sha256, arch.plain_size, arch.name
+                )?;
+                writeln!(
+                    f,
+                    " {} {} main/binary-{}/Packages.gz",
+                    arch.compressed_sha256, arch.compressed_size, arch.name
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ArchitectureMetadata {
     pub name: String,

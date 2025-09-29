@@ -2,51 +2,7 @@ use axum::extract::State;
 
 use crate::adapter_http_server::ServerState;
 use crate::adapter_http_server::handler::ApiError;
-use crate::domain::entity::ReleaseMetadata;
 use crate::domain::prelude::GetReleaseFileError;
-
-struct ReleaseMetadataFormatter(ReleaseMetadata);
-
-impl std::fmt::Display for ReleaseMetadataFormatter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Origin: {}", self.0.origin)?;
-        writeln!(f, "Label: {}", self.0.label)?;
-        writeln!(f, "Suite: {}", self.0.suite)?;
-        writeln!(f, "Version: {}", self.0.version)?;
-        writeln!(f, "Codename: {}", self.0.codename)?;
-        if !self.0.architectures.is_empty() {
-            f.write_str("\n")?;
-            writeln!(f, "MD5Sum:")?;
-            for arch in self.0.architectures.iter() {
-                writeln!(
-                    f,
-                    " {} {} main/binary-{}/Packages",
-                    arch.plain_md5, arch.plain_size, arch.name
-                )?;
-                writeln!(
-                    f,
-                    " {} {} main/binary-{}/Packages.gz",
-                    arch.compressed_md5, arch.compressed_size, arch.name
-                )?;
-            }
-            f.write_str("\n")?;
-            writeln!(f, "SHA256:")?;
-            for arch in self.0.architectures.iter() {
-                writeln!(
-                    f,
-                    " {} {} main/binary-{}/Packages",
-                    arch.plain_sha256, arch.plain_size, arch.name
-                )?;
-                writeln!(
-                    f,
-                    " {} {} main/binary-{}/Packages.gz",
-                    arch.compressed_sha256, arch.compressed_size, arch.name
-                )?;
-            }
-        }
-        Ok(())
-    }
-}
 
 #[tracing::instrument(skip_all, err(Debug))]
 pub async fn handler<AR>(State(state): State<ServerState<AR>>) -> Result<String, ApiError>
@@ -57,7 +13,7 @@ where
         .apt_repository
         .release_metadata()
         .await
-        .map(|res| ReleaseMetadataFormatter(res).to_string())
+        .map(|res| res.serialize().to_string())
         .map_err(|err| match err {
             GetReleaseFileError::NotFound => ApiError::not_found("release not found"),
             GetReleaseFileError::Internal(inner) => ApiError::internal(inner.to_string()),
