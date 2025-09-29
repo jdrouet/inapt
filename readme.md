@@ -83,7 +83,9 @@ The server is configured through environment variables:
 
 ## License
 
-MIT — do what you want, attribution appreciated.
+This project is licensed under the **AGPL-3.0**.
+
+For companies or organizations that wish to use this software in a commercial context **without the obligations of the AGPL**, a **commercial license** is available. Please contact us at **contact@jdrouet.fr** for details.
 
 ## Status
 
