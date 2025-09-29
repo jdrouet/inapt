@@ -1,0 +1,54 @@
+name: testing
+
+on:
+  merge_group:
+    types: [checks_requested]
+  workflow_call:
+  pull_request:
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "resources/**"
+      - "src/**"
+  push:
+    branches:
+      - main
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  testing:
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: ${{ github.ref }}-testing
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: prepare cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-testing-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: run tests
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
