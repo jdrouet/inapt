@@ -231,3 +231,133 @@ impl ArchitectureMetadataBuilder {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::entity::{DebAsset, FileMetadata, PackageControl, PackageMetadata};
+    use crate::domain::prelude::{
+        AptRepositoryWriter, MockDebMetadataExtractor, MockPackageSource, MockReleaseStore,
+    };
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn should_do_synchronize_successfully() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            description: "Test repo".to_string(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_list_deb_assets()
+            .returning(|repo| {
+                let repo = repo.to_string();
+                Box::pin(async move {
+                    Ok(vec![DebAsset {
+                        repo_owner: "owner".to_string(),
+                        repo_name: repo.clone(),
+                        release_id: 1,
+                        asset_id: 1,
+                        filename: format!("pkg_1.0.0_amd64.deb"),
+                        url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
+                        size: 1234,
+                        sha256: Some("deadbeef".to_string()),
+                    }])
+                })
+            });
+        mock_package_source
+            .expect_fetch_deb()
+            .returning(|_asset| Box::pin(async { Ok(temp_file::empty()) }));
+
+        let mut mock_release_store = MockReleaseStore::new();
+        mock_release_store
+            .expect_insert()
+            .returning(|_entry| Box::pin(async {}));
+        mock_release_store
+            .expect_fetch()
+            .returning(|| Box::pin(async { None }));
+
+        let mut mock_deb_extractor = MockDebMetadataExtractor::new();
+        mock_deb_extractor
+            .expect_extract_metadata()
+            .returning(|_path| {
+                Box::pin(async {
+                    Ok(PackageMetadata {
+                        control: PackageControl {
+                            package: "pkg".to_string(),
+                            version: "1.0.0".to_string(),
+                            section: "main".to_string(),
+                            priority: "optional".to_string(),
+                            architecture: "amd64".to_string(),
+                            maintainer: "Tester <test@example.com>".to_string(),
+                            description: vec!["A test package".to_string()],
+                            others: HashMap::new(),
+                        },
+                        file: FileMetadata {
+                            size: 1234,
+                            sha256: "deadbeef".to_string(),
+                        },
+                    })
+                })
+            });
+
+        let service = AptRepositoryService {
+            config,
+            package_source: mock_package_source,
+            release_storage: mock_release_store,
+            deb_extractor: mock_deb_extractor,
+        };
+        let result = AptRepositoryWriter::synchronize(&service).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_do_synchronize_with_error() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            description: "Test repo".to_string(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_list_deb_assets()
+            .returning(|_repo| Box::pin(async { Err(anyhow::anyhow!("fail")) }));
+        mock_package_source
+            .expect_fetch_deb()
+            .returning(|_asset| Box::pin(async { Err(anyhow::anyhow!("fail")) }));
+
+        let mut mock_release_store = MockReleaseStore::new();
+        mock_release_store
+            .expect_insert()
+            .returning(|_entry| Box::pin(async {}));
+        mock_release_store
+            .expect_fetch()
+            .returning(|| Box::pin(async { None }));
+
+        let mut mock_deb_extractor = MockDebMetadataExtractor::new();
+        mock_deb_extractor
+            .expect_extract_metadata()
+            .returning(|_path| Box::pin(async { Err(anyhow::anyhow!("fail")) }));
+
+        let service = AptRepositoryService {
+            config,
+            package_source: mock_package_source,
+            release_storage: mock_release_store,
+            deb_extractor: mock_deb_extractor,
+        };
+        let result = AptRepositoryWriter::synchronize(&service).await;
+        assert!(result.is_err());
+    }
+}

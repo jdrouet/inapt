@@ -70,6 +70,22 @@ pub trait DebMetadataExtractor: Send + Sync + 'static {
     ) -> impl Future<Output = anyhow::Result<PackageMetadata>> + Send;
 }
 
+#[cfg(test)]
+mockall::mock! {
+    pub DebMetadataExtractor {}
+
+    impl Clone for DebMetadataExtractor {
+        fn clone(&self) -> Self;
+    }
+
+    impl DebMetadataExtractor for DebMetadataExtractor {
+        fn extract_metadata(
+            &self,
+            path: &std::path::Path,
+        ) -> impl Future<Output = anyhow::Result<PackageMetadata>> + Send;
+    }
+}
+
 /// Abstracts the source of .deb packages (e.g., GitHub Releases).
 pub trait PackageSource: Send + Sync + 'static {
     /// List all .deb assets for a repo.
@@ -85,8 +101,42 @@ pub trait PackageSource: Send + Sync + 'static {
     ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
 }
 
+#[cfg(test)]
+mockall::mock! {
+    pub PackageSource {}
+
+    impl Clone for PackageSource {
+        fn clone(&self) -> Self;
+    }
+
+    impl PackageSource for PackageSource {
+        fn list_deb_assets(
+            &self,
+            repo: &str,
+        ) -> impl Future<Output = anyhow::Result<Vec<DebAsset>>> + Send;
+        fn fetch_deb(
+            &self,
+            asset: &DebAsset,
+        ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
+    }
+}
+
 /// Caches package metadata and assets.
 pub trait ReleaseStore: Send + Sync + 'static {
     fn insert(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
     fn fetch(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub ReleaseStore {}
+
+    impl Clone for ReleaseStore {
+        fn clone(&self) -> Self;
+    }
+
+    impl ReleaseStore for ReleaseStore {
+        fn insert(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
+        fn fetch(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
+    }
 }
