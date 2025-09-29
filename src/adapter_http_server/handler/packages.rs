@@ -1,15 +1,25 @@
+use std::io::Write;
+
 use axum::extract::{Path, State};
+use flate2::write::GzEncoder;
 
 use crate::adapter_http_server::ServerState;
 
 pub async fn handler<AR>(
-    State(_state): State<ServerState<AR>>,
-    Path(_arch): Path<String>,
-) -> axum::http::StatusCode
+    State(state): State<ServerState<AR>>,
+    Path(arch): Path<String>,
+) -> Result<String, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
 {
-    axum::http::StatusCode::NOT_IMPLEMENTED
+    state
+        .apt_repository
+        .packages_file(arch.as_str())
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, "something went wrong");
+            super::ApiError::internal("ooops")
+        })
 }
 
 // Example of output
@@ -41,32 +51,46 @@ where
 // SHA256: 2222222222222222222222222222222222222222222222222222222222222222
 
 pub async fn gz_handler<AR>(
-    State(_state): State<ServerState<AR>>,
-    Path(_arch): Path<String>,
-) -> axum::http::StatusCode
+    State(state): State<ServerState<AR>>,
+    Path(arch): Path<String>,
+) -> Result<Vec<u8>, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
 {
-    axum::http::StatusCode::NOT_IMPLEMENTED
+    let data = handler(State(state), Path(arch)).await?;
+    let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write(data.as_bytes()).map_err(|err| {
+        tracing::error!(error = ?err, "unable to compress response");
+        super::ApiError::internal("unable to compress response")
+    })?;
+    encoder.finish().map_err(|err| {
+        tracing::error!(error = ?err, "unable to compress response");
+        super::ApiError::internal("unable to compress response")
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use axum::{
-        extract::{Path, State},
-        http::StatusCode,
-    };
+    use axum::extract::{Path, State};
 
     use crate::{adapter_http_server::ServerState, domain::prelude::MockAptRepositoryService};
 
     #[tokio::test]
     async fn should_list_packages() {
-        let apt_repository = MockAptRepositoryService::new();
+        let mut apt_repository = MockAptRepositoryService::new();
+        apt_repository
+            .expect_packages_file()
+            .once()
+            .return_once(|arch| {
+                assert_eq!(arch, "amd64");
+                Box::pin(async { Ok(String::new()) })
+            });
         let res = super::handler(
             State(ServerState { apt_repository }),
-            Path(String::from("x86_64")),
+            Path(String::from("amd64")),
         )
-        .await;
-        assert_eq!(res, StatusCode::NOT_IMPLEMENTED)
+        .await
+        .unwrap();
+        assert_eq!(res, "");
     }
 }

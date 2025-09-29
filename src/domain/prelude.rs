@@ -26,7 +26,16 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
     ) -> impl Future<Output = Result<ReleaseMetadata, GetReleaseFileError>> + Send;
 
     /// Get the Packages file content for a given architecture.
-    fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send;
+    fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send {
+        async {
+            let list = self.list_packages(arch).await?;
+            Ok(list
+                .into_iter()
+                .map(|package| package.metadata.serialize().to_string())
+                .collect::<Vec<_>>()
+                .join("\n"))
+        }
+    }
 }
 
 #[cfg(test)]

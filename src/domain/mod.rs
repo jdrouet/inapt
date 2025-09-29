@@ -49,11 +49,16 @@ where
     DE: Send + Sync + 'static,
 {
     async fn list_packages(&self, arch: &str) -> anyhow::Result<Vec<entity::Package>> {
-        todo!()
-    }
-
-    async fn packages_file(&self, arch: &str) -> anyhow::Result<String> {
-        todo!()
+        let Some(received) = self.release_storage.fetch().await else {
+            return Ok(Vec::new());
+        };
+        Ok(received
+            .architectures
+            .iter()
+            .filter(|item| item.name == arch)
+            .flat_map(|item| item.packages.iter())
+            .cloned()
+            .collect())
     }
 
     async fn release_metadata(

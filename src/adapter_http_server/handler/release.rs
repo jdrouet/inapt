@@ -83,7 +83,7 @@ mod tests {
         let value = super::handler(axum::extract::State(state)).await.unwrap();
         assert_eq!(
             value,
-            "Origin: GitHub\nLabel: Debian\nSuite: Stable\nVersion: 1.2.3\n\n"
+            "Origin: GitHub\nLabel: Debian\nSuite: Stable\nVersion: 1.2.3\nCodename: Whatever\n"
         );
     }
 }
