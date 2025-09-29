@@ -360,4 +360,188 @@ mod tests {
         let result = AptRepositoryWriter::synchronize(&service).await;
         assert!(result.is_err());
     }
+
+    // AptRepositoryReader tests
+
+    #[tokio::test]
+    async fn should_do_list_packages_successfully() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            description: "Test repo".to_string(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        let package = crate::domain::entity::Package {
+            metadata: PackageMetadata {
+                control: PackageControl {
+                    package: "pkg".to_string(),
+                    version: "1.0.0".to_string(),
+                    section: "main".to_string(),
+                    priority: "optional".to_string(),
+                    architecture: "amd64".to_string(),
+                    maintainer: "Tester <test@example.com>".to_string(),
+                    description: vec!["A test package".to_string()],
+                    others: HashMap::new(),
+                },
+                file: FileMetadata {
+                    size: 1234,
+                    sha256: "deadbeef".to_string(),
+                },
+            },
+            asset: DebAsset {
+                repo_owner: "owner".to_string(),
+                repo_name: "testrepo".to_string(),
+                release_id: 1,
+                asset_id: 1,
+                filename: "pkg_1.0.0_amd64.deb".to_string(),
+                url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
+                size: 1234,
+                sha256: Some("deadbeef".to_string()),
+            },
+        };
+        let arch_meta = crate::domain::entity::ArchitectureMetadata {
+            name: "amd64".to_string(),
+            plain_md5: "md5".to_string(),
+            plain_sha256: "sha256".to_string(),
+            plain_size: 1,
+            compressed_md5: "md5".to_string(),
+            compressed_sha256: "sha256".to_string(),
+            compressed_size: 1,
+            packages: vec![package.clone()],
+        };
+        let release_meta = crate::domain::entity::ReleaseMetadata {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            date: chrono::Utc::now(),
+            architectures: vec![arch_meta],
+            components: vec!["main".to_string()],
+            description: "Test repo".to_string(),
+        };
+        mock_release_store.expect_fetch().returning(move || {
+            let release_meta = release_meta.clone();
+            Box::pin(async move { Some(release_meta) })
+        });
+
+        let service = AptRepositoryService {
+            config,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+        };
+        let result =
+            crate::domain::prelude::AptRepositoryReader::list_packages(&service, "amd64").await;
+        assert!(result.is_ok());
+        let pkgs = result.unwrap();
+        assert_eq!(pkgs.len(), 1);
+        assert_eq!(pkgs[0].metadata.control.package, "pkg");
+    }
+
+    #[tokio::test]
+    async fn should_do_list_packages_empty() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            description: "Test repo".to_string(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        mock_release_store
+            .expect_fetch()
+            .returning(|| Box::pin(async { None }));
+
+        let service = AptRepositoryService {
+            config,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+        };
+        let result =
+            crate::domain::prelude::AptRepositoryReader::list_packages(&service, "amd64").await;
+        assert!(result.is_ok());
+        let pkgs = result.unwrap();
+        assert_eq!(pkgs.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn should_do_release_metadata_successfully() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            description: "Test repo".to_string(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        let release_meta = crate::domain::entity::ReleaseMetadata {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            date: chrono::Utc::now(),
+            architectures: vec![],
+            components: vec!["main".to_string()],
+            description: "Test repo".to_string(),
+        };
+        mock_release_store.expect_fetch().returning(move || {
+            let release_meta = release_meta.clone();
+            Box::pin(async move { Some(release_meta) })
+        });
+
+        let service = AptRepositoryService {
+            config,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+        };
+        let result = crate::domain::prelude::AptRepositoryReader::release_metadata(&service).await;
+        assert!(result.is_ok());
+        let meta = result.unwrap();
+        assert_eq!(meta.origin, "TestOrigin");
+    }
+
+    #[tokio::test]
+    async fn should_do_release_metadata_not_found() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            description: "Test repo".to_string(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        mock_release_store
+            .expect_fetch()
+            .returning(|| Box::pin(async { None }));
+
+        let service = AptRepositoryService {
+            config,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+        };
+        let result = crate::domain::prelude::AptRepositoryReader::release_metadata(&service).await;
+        assert!(matches!(
+            result,
+            Err(crate::domain::prelude::GetReleaseFileError::NotFound)
+        ));
+    }
 }
