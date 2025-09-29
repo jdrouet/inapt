@@ -15,6 +15,24 @@ fn with_env(name: &str) -> anyhow::Result<String> {
     std::env::var(name).with_context(|| format!("unable to find {name:?}"))
 }
 
+fn maybe_env(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+fn maybe_env_as<T>(name: &str) -> anyhow::Result<Option<T>>
+where
+    T: std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::error::Error + Send + Sync + 'static,
+{
+    let Ok(value) = std::env::var(name) else {
+        return Ok(None);
+    };
+    value
+        .parse::<T>()
+        .map(Some)
+        .with_context(|| format!("unable to parse value from {name:?}"))
+}
+
 fn with_env_as_or<T>(name: &str, default_value: T) -> anyhow::Result<T>
 where
     T: std::str::FromStr,

@@ -39,7 +39,7 @@ impl super::Client {
 }
 
 impl crate::domain::prelude::PackageSource for super::Client {
-    #[tracing::instrument(skip(self), err(Debug))]
+    #[tracing::instrument(skip_all, fields(filename = asset.filename), err(Debug))]
     async fn fetch_deb(
         &self,
         asset: &crate::domain::entity::DebAsset,
@@ -55,9 +55,11 @@ impl crate::domain::prelude::PackageSource for super::Client {
             .await?;
 
         let mut byte_stream = reqwest::get(&asset.url).await?.bytes_stream();
+        tracing::info!("downloading file");
         while let Some(item) = byte_stream.next().await {
             tokio::io::copy(&mut item?.as_ref(), &mut tmp_file).await?;
         }
+        tracing::info!("download complete");
 
         Ok(file)
     }
