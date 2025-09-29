@@ -33,7 +33,7 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
             let list = self.list_packages(arch).await?;
             Ok(list
                 .into_iter()
-                .map(|package| package.metadata.serialize().to_string())
+                .map(|package| package.serialize().to_string())
                 .collect::<Vec<_>>()
                 .join("\n"))
         }

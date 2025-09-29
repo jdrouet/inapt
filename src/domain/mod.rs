@@ -210,7 +210,7 @@ impl ArchitectureMetadataBuilder {
                 let _ = gz_encoder.write(b"\n")?;
                 plain_size += 1;
             }
-            let display = package.metadata.serialize().to_string();
+            let display = package.serialize().to_string();
             plain_size += display.len() as u64;
             let _ = plain_sha256_hasher.write(display.as_bytes())?;
             let _ = plain_md5_hasher.write(display.as_bytes())?;
@@ -273,7 +273,7 @@ mod tests {
                 control: PackageControl {
                     package: "libcaca".into(),
                     version: "1.1.1".into(),
-                    section: "section".into(),
+                    section: Some("section".into()),
                     priority: "priority".into(),
                     architecture: "amd64".into(),
                     maintainer: "notme".into(),
@@ -310,12 +310,12 @@ Date: Wed, 2 Feb 2000 01:02:02 +0000
 Description: Test repo
 
 MD5Sum:
- 27b3d60d4c8831837509cd88586cce6d 131 main/binary-amd64/Packages
- ccd8e9f0b5163b0af4a614160d36fef1 121 main/binary-amd64/Packages.gz
+ 24494e2b696b17a2eb93c60ba0c748f5 194 main/binary-amd64/Packages
+ 91d18c5b19270aa56499f4acc31cd4b9 163 main/binary-amd64/Packages.gz
 
 SHA256:
- 2309e40eb56213e1adcf617152c83da313c8c4b040b536f308b2758a77a08d93 131 main/binary-amd64/Packages
- 61b0d7a12bf80723f344a13fe25e58a0f7ad3c8927dc4b78d2a907fd272bbdd6 121 main/binary-amd64/Packages.gz
+ 8540b64a3eb6bc9b0484d834ff12807404e36bb772ac4e2a670ac9cbbea25835 194 main/binary-amd64/Packages
+ 50d369648988d47ab31354996318e48efb94480e7691c330bd2eae22da8b2a11 163 main/binary-amd64/Packages.gz
 "#
         );
     }
@@ -371,7 +371,7 @@ SHA256:
                         control: PackageControl {
                             package: "pkg".to_string(),
                             version: "1.0.0".to_string(),
-                            section: "main".to_string(),
+                            section: Some("main".to_string()),
                             priority: "optional".to_string(),
                             architecture: "amd64".to_string(),
                             maintainer: "Tester <test@example.com>".to_string(),
@@ -461,7 +461,7 @@ SHA256:
                 control: PackageControl {
                     package: "pkg".to_string(),
                     version: "1.0.0".to_string(),
-                    section: "main".to_string(),
+                    section: Some("main".to_string()),
                     priority: "optional".to_string(),
                     architecture: "amd64".to_string(),
                     maintainer: "Tester <test@example.com>".to_string(),

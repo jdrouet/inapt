@@ -27,7 +27,7 @@ mod tests {
         let res = DebReader.extract_metadata(&path).await.unwrap();
         assert_eq!(res.control.package, "curl");
         assert_eq!(res.control.version, "8.14.1-2");
-        assert_eq!(res.control.section, "web");
+        assert_eq!(res.control.section.unwrap(), "web");
         assert_eq!(res.control.architecture, "amd64");
         similar_asserts::assert_eq!(
             res.control.description.join("\n"),

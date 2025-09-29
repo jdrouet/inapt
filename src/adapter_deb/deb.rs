@@ -117,7 +117,7 @@ impl<'a> ControlBuilder<'a> {
             version: self
                 .take_string("Version")
                 .ok_or_else(|| anyhow::anyhow!("unable to find package version"))?,
-            section: self.take_string("Section").unwrap_or_default(),
+            section: self.take_string("Section"),
             priority: self
                 .take_string("Priority")
                 .ok_or_else(|| anyhow::anyhow!("unable to find package priority"))?,
