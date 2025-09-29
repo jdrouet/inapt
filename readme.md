@@ -2,6 +2,8 @@
 
 A minimal Debian/Ubuntu APT repository proxy written in Rust. It exposes a valid APT repo structure over HTTP but sources .deb packages directly from GitHub Release assets. Useful for distributing packages without hosting your own artifact storage.
 
+> ⚠️ The following readme is a goal, it's not yet implemented...
+
 ## Features
 
 - Exposes a Debian repository structure over HTTP:
