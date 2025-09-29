@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use axum::response::IntoResponse;
 use axum::routing::get;
 
 use crate::adapter_http_server::ServerState;
@@ -23,4 +26,34 @@ where
             get(packages::gz_handler),
         )
         .route("/pool/main/{p}/{pkg}/{file}", get(pool_redirect::handler))
+}
+
+#[derive(Debug)]
+struct ApiError {
+    status_code: axum::http::StatusCode,
+    message: Cow<'static, str>,
+}
+
+impl ApiError {
+    #[inline]
+    fn internal(message: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            status_code: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            message: message.into(),
+        }
+    }
+
+    #[inline]
+    fn not_found(message: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            status_code: axum::http::StatusCode::NOT_FOUND,
+            message: message.into(),
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> axum::response::Response {
+        (self.status_code, self.message).into_response()
+    }
 }

@@ -1,4 +1,5 @@
 use anyhow::Context;
+use tower_http::trace::TraceLayer;
 
 mod handler;
 
@@ -62,11 +63,13 @@ where
     AR: Clone + crate::domain::prelude::AptRepositoryReader,
 {
     pub fn build(self) -> anyhow::Result<Server> {
-        let router = handler::build().with_state(ServerState {
-            apt_repository: self
-                .apt_repository
-                .ok_or_else(|| anyhow::anyhow!("apt_repository service not defined"))?,
-        });
+        let router = handler::build()
+            .layer(TraceLayer::new_for_http())
+            .with_state(ServerState {
+                apt_repository: self
+                    .apt_repository
+                    .ok_or_else(|| anyhow::anyhow!("apt_repository service not defined"))?,
+            });
         Ok(Server {
             address: self.address,
             router,

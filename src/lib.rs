@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use anyhow::Context;
 
-use crate::domain::AptRepositoryService;
+use crate::{adapter_deb::DebReader, domain::AptRepositoryService};
 
+mod adapter_deb;
 mod adapter_github;
 mod adapter_http_server;
+mod adapter_storage;
 mod adapter_worker;
 mod domain;
 
@@ -42,10 +44,21 @@ impl Config {
     }
 
     pub fn build(self) -> anyhow::Result<Application> {
+        let release_storage = crate::adapter_storage::MemoryStorage::default();
         let github = self.github.build()?;
         let apt_repository_service = AptRepositoryService {
             package_source: github.clone(),
-            repositories: Arc::from(["jdrouet/mrml".to_string(), "helix-editor/helix".to_string()]),
+            release_storage,
+            config: Arc::from(crate::domain::Config {
+                origin: "GitHub".into(),
+                label: "Debian".into(),
+                suite: "stable".into(),
+                version: "0.1.0".into(),
+                codename: "cucumber".into(),
+                description: "GitHub releases proxy".into(),
+                repositories: vec!["jdrouet/mrml".to_string(), "helix-editor/helix".to_string()],
+            }),
+            deb_extractor: DebReader,
         };
         Ok(Application {
             github,

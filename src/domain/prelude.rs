@@ -4,6 +4,14 @@ pub trait AptRepositoryWriter: Send + Sync + 'static {
     fn synchronize(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum GetReleaseFileError {
+    #[error("release file not found")]
+    NotFound,
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
+}
+
 /// Represents a logical APT repository (suite/component/arch).
 pub trait AptRepositoryReader: Send + Sync + 'static {
     /// List all available packages for a given architecture.
@@ -13,7 +21,9 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
     ) -> impl Future<Output = anyhow::Result<Vec<Package>>> + Send;
 
     /// Get the Release metadata for the repository.
-    fn release_metadata(&self) -> impl Future<Output = anyhow::Result<ReleaseMetadata>> + Send;
+    fn release_metadata(
+        &self,
+    ) -> impl Future<Output = Result<ReleaseMetadata, GetReleaseFileError>> + Send;
 
     /// Get the Packages file content for a given architecture.
     fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send;
@@ -35,7 +45,7 @@ mockall::mock! {
         ) -> impl Future<Output = anyhow::Result<Vec<Package>>> + Send;
 
         /// Get the Release metadata for the repository.
-        fn release_metadata(&self) -> impl Future<Output = anyhow::Result<ReleaseMetadata>> + Send;
+        fn release_metadata(&self) -> impl Future<Output = Result<ReleaseMetadata, GetReleaseFileError>> + Send;
 
         /// Get the Packages file content for a given architecture.
         fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send;
@@ -44,10 +54,10 @@ mockall::mock! {
 
 /// Extracts control metadata from a .deb file.
 pub trait DebMetadataExtractor: Send + Sync + 'static {
-    /// Given a .deb file (as bytes or path), extract control fields.
+    /// Given a .deb file, extract control fields.
     fn extract_metadata(
         &self,
-        deb_data: &[u8],
+        path: &std::path::Path,
     ) -> impl Future<Output = anyhow::Result<PackageMetadata>> + Send;
 }
 
@@ -67,15 +77,7 @@ pub trait PackageSource: Send + Sync + 'static {
 }
 
 /// Caches package metadata and assets.
-pub trait MetadataCache: Send + Sync + 'static {
-    /// Get cached metadata, or None if expired/missing.
-    fn get(&self, key: &str) -> impl Future<Output = Option<PackageMetadata>> + Send;
-
-    /// Store metadata with a TTL.
-    fn set(
-        &mut self,
-        key: &str,
-        value: PackageMetadata,
-        ttl_secs: u64,
-    ) -> impl Future<Output = ()> + Send;
+pub trait ReleaseStore: Send + Sync + 'static {
+    fn insert(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
+    fn fetch(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
 }
