@@ -23,7 +23,7 @@ A minimal Debian/Ubuntu APT repository proxy written in Rust. It exposes a valid
 1. Clone & configure
 
 ```bash
-git clone https://github.com/yourname/inapt.git
+git clone https://github.com/jdrouet/inapt.git
 cd inapt
 ```
 
