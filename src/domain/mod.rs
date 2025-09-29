@@ -343,7 +343,7 @@ SHA256:
                         repo_name: repo.clone(),
                         release_id: 1,
                         asset_id: 1,
-                        filename: format!("pkg_1.0.0_amd64.deb"),
+                        filename: "pkg_1.0.0_amd64.deb".to_string(),
                         url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
                         size: 1234,
                         sha256: Some("deadbeef".to_string()),
