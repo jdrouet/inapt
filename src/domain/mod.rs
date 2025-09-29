@@ -70,6 +70,18 @@ where
         let received = self.release_storage.fetch().await;
         received.ok_or(prelude::GetReleaseFileError::NotFound)
     }
+
+    async fn package(&self, name: &str, filename: &str) -> anyhow::Result<Option<Package>> {
+        let Some(received) = self.release_storage.fetch().await else {
+            return Ok(None);
+        };
+        Ok(received
+            .architectures
+            .iter()
+            .flat_map(|item| item.packages.iter())
+            .find(|item| item.metadata.control.package == name && item.asset.filename == filename)
+            .cloned())
+    }
 }
 
 impl<C, PS, RS, DE> AptRepositoryService<C, PS, RS, DE>
