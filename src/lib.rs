@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 
@@ -58,6 +58,7 @@ impl Config {
                 description: "GitHub releases proxy".into(),
                 repositories: vec!["jdrouet/mrml".to_string(), "helix-editor/helix".to_string()],
             }),
+            clock: PhantomData::<chrono::Utc>,
             deb_extractor: DebReader,
         };
         Ok(Application {

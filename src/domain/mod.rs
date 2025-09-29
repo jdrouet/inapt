@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     io::Write,
+    marker::PhantomData,
     sync::Arc,
 };
 
@@ -35,15 +36,17 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug)]
-pub struct AptRepositoryService<PS, RS, DE> {
+pub struct AptRepositoryService<C, PS, RS, DE> {
     pub config: Arc<Config>,
+    pub clock: PhantomData<C>,
     pub package_source: PS,
     pub release_storage: RS,
     pub deb_extractor: DE,
 }
 
-impl<PS, RS, DE> prelude::AptRepositoryReader for AptRepositoryService<PS, RS, DE>
+impl<C, PS, RS, DE> prelude::AptRepositoryReader for AptRepositoryService<C, PS, RS, DE>
 where
+    C: Send + Sync + 'static,
     PS: Send + Sync + 'static,
     RS: crate::domain::prelude::ReleaseStore,
     DE: Send + Sync + 'static,
@@ -69,8 +72,9 @@ where
     }
 }
 
-impl<PS, RS, DE> AptRepositoryService<PS, RS, DE>
+impl<C, PS, RS, DE> AptRepositoryService<C, PS, RS, DE>
 where
+    C: crate::domain::prelude::Clock,
     PS: crate::domain::prelude::PackageSource,
     RS: crate::domain::prelude::ReleaseStore,
     DE: crate::domain::prelude::DebMetadataExtractor,
@@ -82,11 +86,12 @@ where
     }
 }
 
-impl<PS, RS, DE> AptRepositoryService<PS, RS, DE>
+impl<C, PS, RS, DE> AptRepositoryService<C, PS, RS, DE>
 where
-    PS: crate::domain::prelude::PackageSource,
-    RS: crate::domain::prelude::ReleaseStore,
-    DE: crate::domain::prelude::DebMetadataExtractor,
+    C: prelude::Clock,
+    PS: prelude::PackageSource,
+    RS: prelude::ReleaseStore,
+    DE: prelude::DebMetadataExtractor,
 {
     #[tracing::instrument(skip(self), err(Debug))]
     async fn synchronize_repo(&self, repo: &str) -> anyhow::Result<()> {
@@ -103,16 +108,17 @@ where
         list.into_iter().for_each(|item| {
             builder.insert(item);
         });
-        self.release_storage.insert(builder.build()?).await;
+        self.release_storage.insert(builder.build::<C>()?).await;
         Ok(())
     }
 }
 
-impl<PS, RS, DE> prelude::AptRepositoryWriter for AptRepositoryService<PS, RS, DE>
+impl<C, PS, RS, DE> prelude::AptRepositoryWriter for AptRepositoryService<C, PS, RS, DE>
 where
-    PS: crate::domain::prelude::PackageSource,
-    RS: crate::domain::prelude::ReleaseStore,
-    DE: crate::domain::prelude::DebMetadataExtractor,
+    C: prelude::Clock,
+    PS: prelude::PackageSource,
+    RS: prelude::ReleaseStore,
+    DE: prelude::DebMetadataExtractor,
 {
     #[tracing::instrument(skip(self), err(Debug))]
     async fn synchronize(&self) -> anyhow::Result<()> {
@@ -151,14 +157,14 @@ impl ReleaseMetadataBuilder {
             .insert(package);
     }
 
-    fn build(self) -> anyhow::Result<entity::ReleaseMetadata> {
+    fn build<C: prelude::Clock>(self) -> anyhow::Result<entity::ReleaseMetadata> {
         Ok(entity::ReleaseMetadata {
             origin: self.config.origin.clone(),
             label: self.config.label.clone(),
             suite: self.config.suite.clone(),
             version: self.config.version.clone(),
             codename: self.config.codename.clone(),
-            date: chrono::Utc::now(),
+            date: C::now(),
             architectures: self
                 .architectures
                 .into_iter()
@@ -242,6 +248,78 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    struct UniqueClock;
+
+    impl super::prelude::Clock for UniqueClock {
+        fn now() -> chrono::DateTime<chrono::Utc> {
+            chrono::DateTime::from_timestamp(949453322, 0).unwrap()
+        }
+    }
+
+    #[test]
+    fn should_build_realease_metadata() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".to_string(),
+            label: "TestLabel".to_string(),
+            suite: "test".to_string(),
+            version: "0.1.0".to_string(),
+            codename: "testcode".to_string(),
+            description: "Test repo".to_string(),
+            repositories: vec!["testrepo".to_string()],
+        });
+        let mut builder = ReleaseMetadataBuilder::new(config);
+        builder.insert(Package {
+            metadata: PackageMetadata {
+                control: PackageControl {
+                    package: "libcaca".into(),
+                    version: "1.1.1".into(),
+                    section: "section".into(),
+                    priority: "priority".into(),
+                    architecture: "amd64".into(),
+                    maintainer: "notme".into(),
+                    description: vec!["description".into()],
+                    others: Default::default(),
+                },
+                file: FileMetadata {
+                    size: 512,
+                    sha256: "shasha".into(),
+                },
+            },
+            asset: DebAsset {
+                repo_owner: "owner".into(),
+                repo_name: "name".into(),
+                release_id: 1234,
+                asset_id: 1234,
+                filename: "foo.deb".into(),
+                url: "http://example.com/foo.deb".into(),
+                size: 123456,
+                sha256: Some("sha256".into()),
+            },
+        });
+        let release_metadata = builder.build::<UniqueClock>().unwrap();
+        assert!(!release_metadata.architectures.is_empty());
+        similar_asserts::assert_eq!(
+            release_metadata.serialize().to_string(),
+            r#"Origin: TestOrigin
+Label: TestLabel
+Suite: test
+Version: 0.1.0
+Codename: testcode
+Components: main
+Date: Wed, 2 Feb 2000 01:02:02 +0000
+Description: Test repo
+
+MD5Sum:
+ 27b3d60d4c8831837509cd88586cce6d 131 main/binary-amd64/Packages
+ ccd8e9f0b5163b0af4a614160d36fef1 121 main/binary-amd64/Packages.gz
+
+SHA256:
+ 2309e40eb56213e1adcf617152c83da313c8c4b040b536f308b2758a77a08d93 131 main/binary-amd64/Packages
+ 61b0d7a12bf80723f344a13fe25e58a0f7ad3c8927dc4b78d2a907fd272bbdd6 121 main/binary-amd64/Packages.gz
+"#
+        );
+    }
+
     #[tokio::test]
     async fn should_do_synchronize_successfully() {
         let config = Arc::new(Config {
@@ -310,6 +388,7 @@ mod tests {
 
         let service = AptRepositoryService {
             config,
+            clock: PhantomData::<UniqueClock>,
             package_source: mock_package_source,
             release_storage: mock_release_store,
             deb_extractor: mock_deb_extractor,
@@ -353,6 +432,7 @@ mod tests {
 
         let service = AptRepositoryService {
             config,
+            clock: PhantomData::<UniqueClock>,
             package_source: mock_package_source,
             release_storage: mock_release_store,
             deb_extractor: mock_deb_extractor,
@@ -432,6 +512,7 @@ mod tests {
 
         let service = AptRepositoryService {
             config,
+            clock: PhantomData::<UniqueClock>,
             package_source: MockPackageSource::new(),
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
@@ -463,6 +544,7 @@ mod tests {
 
         let service = AptRepositoryService {
             config,
+            clock: PhantomData::<UniqueClock>,
             package_source: MockPackageSource::new(),
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
@@ -505,6 +587,7 @@ mod tests {
 
         let service = AptRepositoryService {
             config,
+            clock: PhantomData::<UniqueClock>,
             package_source: MockPackageSource::new(),
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
@@ -534,6 +617,7 @@ mod tests {
 
         let service = AptRepositoryService {
             config,
+            clock: PhantomData::<UniqueClock>,
             package_source: MockPackageSource::new(),
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),

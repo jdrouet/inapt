@@ -1,3 +1,5 @@
+use chrono::{DateTime, Utc};
+
 use super::entity::*;
 
 pub trait AptRepositoryWriter: Send + Sync + 'static {
@@ -138,5 +140,24 @@ mockall::mock! {
     impl ReleaseStore for ReleaseStore {
         fn insert(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
         fn fetch(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
+    }
+}
+
+pub trait Clock: Send + Sync + 'static {
+    fn now() -> DateTime<Utc>;
+}
+
+impl Clock for chrono::Utc {
+    fn now() -> DateTime<Utc> {
+        Utc::now()
+    }
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub Clock {}
+
+    impl Clock for Clock {
+        fn now() -> chrono::DateTime<chrono::Utc>;
     }
 }

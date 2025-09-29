@@ -34,3 +34,4 @@ zstd = "0.13"    # for .zst
 
 [dev-dependencies]
 mockall = "0.13.1"
+similar-asserts = "1.7.0"
