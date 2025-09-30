@@ -20,7 +20,7 @@ flate2 = "1"     # for .gz
 futures = "0.3"
 hex = "0.4"
 md-5 = "0.10.6"
-octocrab = { version = "0.45" }
+octocrab = { version = "0.46" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 secrecy = { version = "0.10", default-features = false }
 sha2 = "0.10"    # optional: for SHA256 of the .deb
