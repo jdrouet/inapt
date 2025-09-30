@@ -43,7 +43,7 @@ name = "inapt"
 maintainer-scripts = "package/scripts"
 conf-files = ["/etc/default/inapt"]
 assets = [
-    ["package/systemd/inapt.service", "/lib/systemd/system/inapt.service", "644"],
+    ["target/release/inapt", "/usr/bin/", "755"],
     ["package/systemd/inapt.default", "/etc/default/inapt", "600"],
 ]
 
