@@ -1,42 +1,54 @@
-use std::{collections::HashMap, fmt::Write};
+use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
 /// Package
 #[derive(Debug, Clone)]
 pub struct Package {
     pub metadata: PackageMetadata,
-    #[allow(unused, reason = "TBD")]
     pub asset: DebAsset,
+}
+
+impl Package {
+    pub fn serialize(&self) -> SerializedPackageMetadata<'_> {
+        SerializedPackageMetadata(self)
+    }
 }
 
 /// Metadata extracted from a .deb file's control section.
 #[derive(Debug, Clone)]
 pub struct PackageMetadata {
     pub control: PackageControl,
-    #[allow(unused, reason = "TBD")]
     pub file: FileMetadata,
 }
 
-impl PackageMetadata {
-    pub fn serialize(&self) -> SerializedPackageMetadata<'_> {
-        SerializedPackageMetadata(self)
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
-pub struct SerializedPackageMetadata<'a>(&'a PackageMetadata);
+pub struct SerializedPackageMetadata<'a>(&'a Package);
 
 impl<'a> std::fmt::Display for SerializedPackageMetadata<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Package: {}", self.0.control.package)?;
-        writeln!(f, "Version: {}", self.0.control.version)?;
-        writeln!(f, "Section: {}", self.0.control.section)?;
-        writeln!(f, "Priority: {}", self.0.control.priority)?;
-        writeln!(f, "Architecture: {}", self.0.control.architecture)?;
-        writeln!(f, "Maintainer: {}", self.0.control.maintainer)?;
-        write_multiline(f, "Description", &self.0.control.description)?;
-        for (name, values) in self.0.control.others.iter() {
+        let ctrl = &self.0.metadata.control;
+        let file = &self.0.metadata.file;
+        let asset = &self.0.asset;
+        writeln!(f, "Package: {}", ctrl.package)?;
+        writeln!(f, "Version: {}", ctrl.version)?;
+        if let Some(ref section) = ctrl.section {
+            writeln!(f, "Section: {}", section)?;
+        }
+        writeln!(f, "Priority: {}", ctrl.priority)?;
+        writeln!(f, "Architecture: {}", ctrl.architecture)?;
+        writeln!(f, "Maintainer: {}", ctrl.maintainer)?;
+        write_multiline(f, "Description", &ctrl.description)?;
+        for (name, values) in ctrl.others.iter() {
             write_multiline(f, name, values)?;
         }
+        if let Some(first) = ctrl.package.chars().next() {
+            writeln!(
+                f,
+                "Filename: pool/main/{first}/{}/{}",
+                ctrl.package, asset.filename,
+            )?;
+        }
+        writeln!(f, "Size: {}", file.size)?;
+        writeln!(f, "SHA256: {}", file.sha256)?;
         Ok(())
     }
 }
@@ -65,7 +77,7 @@ pub struct PackageControl {
     /// version of the package
     pub version: String,
     /// section or category (like utilx, net, libs)
-    pub section: String,
+    pub section: Option<String>,
     /// important (like required, standard, optional, etc)
     pub priority: String,
     /// target architecture (amd64, arm64, all, etc)
@@ -79,7 +91,6 @@ pub struct PackageControl {
 
 /// Metadata extracted from a .deb file's control section.
 #[derive(Debug, Clone)]
-#[allow(unused, reason = "TBD")]
 pub struct FileMetadata {
     pub size: u64,
     pub sha256: String,
@@ -88,15 +99,15 @@ pub struct FileMetadata {
 /// Metadata for the Release file.
 #[derive(Debug, Clone)]
 pub struct ReleaseMetadata {
-    pub origin: String,
-    pub label: String,
-    pub suite: String,
-    pub version: String,
-    pub codename: String,
+    pub origin: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub suite: Cow<'static, str>,
+    pub version: Cow<'static, str>,
+    pub codename: Cow<'static, str>,
     pub date: chrono::DateTime<chrono::Utc>,
     pub architectures: Vec<ArchitectureMetadata>,
     pub components: Vec<String>,
-    pub description: String,
+    pub description: Cow<'static, str>,
 }
 
 impl ReleaseMetadata {

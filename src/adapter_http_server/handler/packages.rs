@@ -17,8 +17,8 @@ where
         .packages_file(arch.as_str())
         .await
         .map_err(|err| {
-            tracing::error!(error = ?err, "something went wrong");
-            super::ApiError::internal("ooops")
+            tracing::error!(error = ?err, "unable to fetch packages");
+            super::ApiError::internal("unable to fetch packages")
         })
 }
 

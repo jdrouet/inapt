@@ -1,0 +1,16 @@
+services:
+  inapt:
+    build: .
+    environment:
+      RUST_LOG: debug
+      REPO_REPOSITORIES: OctopusDeploy/cli
+  runner:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM debian:bookworm
+        RUN apt-get update && apt-get install -y curl
+        RUN echo "deb [trusted=yes] http://inapt:3000 stable main" > /etc/apt/sources.list.d/inapt.list
+        CMD ["/bin/bash"]
+    depends_on:
+      - inapt

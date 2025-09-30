@@ -23,18 +23,20 @@ A minimal Debian/Ubuntu APT repository proxy written in Rust. It exposes a valid
 1. Clone & configure
 
 ```bash
-git clone https://github.com/yourname/inapt.git
+git clone https://github.com/jdrouet/inapt.git
 cd inapt
-cp .env.example .env
 ```
 
 Edit .env to list the GitHub repos you want to expose, e.g.:
 
 ```
-REPOS=myorg/myproject
-SUITE=stable
-COMPONENT=main
-ARCHS=amd64
+REPO_ORIGIN=My Origin
+REPO_LABEL=Debian
+REPO_SUITE=sable
+REPO_VERSION=1.2.3
+REPO_CODENAME=cucumber
+REPO_DESCRIPTION=How you want to describe it
+REPO_REPOSITORIES=myorg/myproject
 ```
 
 2. Run
@@ -43,14 +45,14 @@ ARCHS=amd64
 cargo run
 ```
 
-The proxy listens on 0.0.0.0:8080 by default.
+The proxy listens on 0.0.0.0:3000 by default.
 
 3. Configure APT client
 
 For now, you must trust the repo (unsigned):
 
 ```
-echo "deb [trusted=yes] http://localhost:8080 stable main" | sudo tee /etc/apt/sources.list.d/inapt.list
+echo "deb [trusted=yes] http://localhost:3000 stable main" | sudo tee /etc/apt/sources.list.d/inapt.list
 sudo apt update
 ```
 
@@ -64,14 +66,11 @@ sudo apt install mypackage
 
 The server is configured through environment variables:
 
-| Variable         | Description                                          | Default |
-|------------------|------------------------------------------------------|---------|
-| `REPOS`          | Comma-separated owner/repo list to scan for releases |         |
-| `GITHUB_TOKEN`   | Optional token (higher rate limit, private repos)    | none    |
-| `SUITE`          | Distribution codename (e.g., stable)                 | stable  |
-| `COMPONENT`      | Component (e.g., main)                               | main    |
-| `ARCHS`          | Comma-separated architectures (e.g., amd64,arm64)    | amd64   |
-| `CACHE_TTL_SECS` | Cache duration for GitHub release queries            | 900     |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `REPO_REPOSITORIES` | Comma-separated owner/repo list to scan for releases | |
+| `REPO_SUITE` | Distribution codename (e.g., stable) | stable |
+| `GITHUB_TOKEN` | Optional token (higher rate limit, private repos) | none |
 
 ## Roadmap
 
@@ -84,7 +83,9 @@ The server is configured through environment variables:
 
 ## License
 
-MIT — do what you want, attribution appreciated.
+This project is licensed under the **AGPL-3.0**.
+
+For companies or organizations that wish to use this software in a commercial context **without the obligations of the AGPL**, a **commercial license** is available. Please contact us at **contact@jdrouet.fr** for details.
 
 ## Status
 

@@ -33,11 +33,18 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
             let list = self.list_packages(arch).await?;
             Ok(list
                 .into_iter()
-                .map(|package| package.metadata.serialize().to_string())
+                .map(|package| package.serialize().to_string())
                 .collect::<Vec<_>>()
                 .join("\n"))
         }
     }
+
+    /// Get the package for a given package name and filename
+    fn package(
+        &self,
+        name: &str,
+        filename: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<Package>>> + Send;
 }
 
 #[cfg(test)]
@@ -60,6 +67,13 @@ mockall::mock! {
 
         /// Get the Packages file content for a given architecture.
         fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send;
+
+        /// Get the package for a given package name and filename
+        fn package(
+            &self,
+            name: &str,
+            filename: &str,
+        ) -> impl Future<Output = anyhow::Result<Option<Package>>> + Send;
     }
 }
 
