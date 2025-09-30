@@ -1,0 +1,18 @@
+[Unit]
+Description=inapt service
+After=network-online.target
+Requires=network-online.target
+
+[Service]
+User=inapt
+Group=inapt
+Type=simple
+# allowing to bind on ports like 80 or 443 without being root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ExecStart=/usr/bin/inapt
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=-/etc/default/inapt
+
+[Install]
+WantedBy=multi-user.target

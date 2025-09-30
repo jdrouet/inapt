@@ -37,3 +37,17 @@ zstd = "0.13"    # for .zst
 [dev-dependencies]
 mockall = "0.13.1"
 similar-asserts = "1.7.0"
+
+[package.metadata.deb]
+name = "inapt"
+maintainer-scripts = "package/scripts"
+conf-files = ["/etc/default/inapt"]
+assets = [
+    ["package/systemd/inapt.service", "/lib/systemd/system/inapt.service", "644"],
+    ["package/systemd/inapt.default", "/etc/default/inapt", "600"],
+]
+
+[package.metadata.deb.systemd-units]
+unit-scripts = "package/systemd/"
+enable = true
+start = true

@@ -28,6 +28,7 @@ WORKDIR /code
 
 COPY Cargo.toml /code/Cargo.toml
 COPY Cargo.lock /code/Cargo.lock
+COPY package /code/package
 COPY src /code/src
 COPY readme.md /code/readme.md
 COPY --from=vendor /code/.cargo /code/.cargo

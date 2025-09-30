@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+# Add inapt:inapt user & group
+id --user inapt >/dev/null 2>&1 || \
+  useradd --system --shell /sbin/nologin --home-dir /var/lib/inapt --user-group \
+    --comment "Inapt proxy" inapt
+
+# Create default inapt data directory
+mkdir -p /var/lib/inapt
+
+# Make inapt:inapt the owner of the inapt data directory
+chown -R inapt:inapt /var/lib/inapt
+
+#DEBHELPER#
