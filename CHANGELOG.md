@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/jdrouet/inapt/compare/v0.1.0...v0.1.1) - 2025-10-01
+
+### Added
+
+- load domain config from env variable
+- implement pool redirection
+- add Filename to package file
+
+### Fixed
+
+- make the deb build work
+
+### Other
+
+- *(deps)* Bump axum from 0.8.5 to 0.8.6 ([#7](https://github.com/jdrouet/inapt/pull/7))
+- add release-package workflow to push deb file
+- update deb building process
+- *(deps)* Bump actions/checkout from 4 to 5 ([#4](https://github.com/jdrouet/inapt/pull/4))
+- *(deps)* Bump octocrab from 0.45.0 to 0.46.0 ([#5](https://github.com/jdrouet/inapt/pull/5))
+- *(deps)* Bump thiserror from 2.0.16 to 2.0.17 ([#6](https://github.com/jdrouet/inapt/pull/6))
+- *(deps)* Bump axum from 0.8.4 to 0.8.5 ([#3](https://github.com/jdrouet/inapt/pull/3))
+- add codecov token
+- update readme
+- update license section in readme
+- add working example with octopus deploy
+- update dockerfile to instal certificates
+- configure dependabot
+- release v0.1.0 ([#1](https://github.com/jdrouet/inapt/pull/1))
+
 ## [0.1.0](https://github.com/jdrouet/inapt/releases/tag/v0.1.0) - 2025-09-29
 
 ### Added
