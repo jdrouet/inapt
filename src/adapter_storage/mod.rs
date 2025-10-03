@@ -63,7 +63,6 @@ impl Inner {
                 .context("unable to open storage file")?;
             serde_json::to_writer(&mut file, value).context("unable to write to storage file")?;
             file.flush()?;
-            eprintln!("FLUSHED");
         }
         Ok(())
     }
