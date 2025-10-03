@@ -24,9 +24,9 @@ md-5 = "0.10"
 octocrab = { version = "0.46" }
 opentelemetry = { version = "0.31", default-features = false }
 opentelemetry-appender-tracing = { version = "0.31", default-features = false }
-opentelemetry-otlp = { version = "0.31", default-features = false, features = ["grpc-tonic", "tls-roots"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "tls-roots"] }
 opentelemetry-semantic-conventions = { version = "0.31", default-features = false }
-opentelemetry_sdk = { version = "0.31", default-features = false, features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.31", default-features = false, features = ["logs", "metrics", "rt-tokio", "trace"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 secrecy = { version = "0.10", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
@@ -38,7 +38,7 @@ thiserror = "2.0"
 tokio = { version = "1.47", default-features = false, features = ["fs", "macros", "net", "rt-multi-thread"] }
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = { version = "0.1" }
-tracing-opentelemetry = { version = "0.32", default-features = false }
+tracing-opentelemetry = { version = "0.32", default-features = false, features = ["metrics"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
 xz2 = "0.1"      # for .xz
 zstd = "0.13"    # for .zst

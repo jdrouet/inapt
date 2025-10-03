@@ -4,3 +4,12 @@
 PORT=3000
 REPO_REPOSITORIES=jdrouet/inapt
 STORAGE_PATH=/var/lib/inapt/storage.json
+
+# when tracing to console
+TRACING_MODE=console
+TRACING_CONSOLE_COLOR=false
+
+# when tracing to otel in grpc
+# TRACING_MODE=otel
+# TRACING_OTEL_ENDPOINT=http://localhost:4317
+# TRACING_OTEL_INTERNAL_LEVEL=error

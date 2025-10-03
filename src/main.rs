@@ -7,7 +7,7 @@ async fn main() -> anyhow::Result<()> {
     let app = config.build()?;
     let res = app.run().await;
 
-    tracer.shutdown().await;
+    tracer.shutdown();
 
     res
 }
