@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
 /// Package
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Package {
     pub metadata: PackageMetadata,
     pub asset: DebAsset,
@@ -14,7 +14,7 @@ impl Package {
 }
 
 /// Metadata extracted from a .deb file's control section.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PackageMetadata {
     pub control: PackageControl,
     pub file: FileMetadata,
@@ -70,7 +70,7 @@ fn write_multiline(
 }
 
 /// Metadata extracted from a .deb file's control section.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PackageControl {
     /// name of the package
     pub package: String,
@@ -90,14 +90,14 @@ pub struct PackageControl {
 }
 
 /// Metadata extracted from a .deb file's control section.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileMetadata {
     pub size: u64,
     pub sha256: String,
 }
 
 /// Metadata for the Release file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReleaseMetadata {
     pub origin: Cow<'static, str>,
     pub label: Cow<'static, str>,
@@ -162,7 +162,7 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ArchitectureMetadata {
     pub name: String,
     pub plain_md5: String,
@@ -175,7 +175,7 @@ pub struct ArchitectureMetadata {
 }
 
 /// Represents a .deb asset (source, filename, URL, etc.).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(unused, reason = "TBD")]
 pub struct DebAsset {
     pub repo_owner: String,

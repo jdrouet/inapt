@@ -1,5 +1,6 @@
 # /etc/default/inapt
 # Example environment variables for inapt
 
-REPO_REPOSITORIES=jdrouet/inapt
 PORT=3000
+REPO_REPOSITORIES=jdrouet/inapt
+STORAGE_PATH=/var/lib/inapt/storage.json

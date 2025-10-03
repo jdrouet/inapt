@@ -53,6 +53,7 @@ pub struct Config {
     config: domain::Config,
     github: adapter_github::Config,
     http_server: adapter_http_server::Config,
+    storage: adapter_storage::Config,
     worker: adapter_worker::Config,
 }
 
@@ -62,12 +63,13 @@ impl Config {
             config: domain::Config::from_env()?,
             github: adapter_github::Config::from_env()?,
             http_server: adapter_http_server::Config::from_env()?,
+            storage: adapter_storage::Config::from_env()?,
             worker: adapter_worker::Config::from_env()?,
         })
     }
 
     pub fn build(self) -> anyhow::Result<Application> {
-        let release_storage = crate::adapter_storage::MemoryStorage::default();
+        let release_storage = self.storage.build()?;
         let github = self.github.build()?;
         let apt_repository_service = AptRepositoryService {
             package_source: github.clone(),
