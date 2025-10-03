@@ -29,7 +29,7 @@ impl Config {
             Ok(inner) => Ok(MemoryStorage::from(inner)),
             Err(err) if self.ignore_errors => {
                 tracing::warn!(error = ?err, "unable to load last value, ignoring");
-                return Ok(MemoryStorage::new(self.path));
+                Ok(MemoryStorage::new(self.path))
             }
             Err(err) => Err(err),
         }
