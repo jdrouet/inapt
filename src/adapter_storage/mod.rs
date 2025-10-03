@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::domain::entity::ReleaseMetadata;
+use crate::domain::entity::{DebAsset, Package, ReleaseMetadata};
 
 #[derive(Clone, Debug, Default)]
 pub struct MemoryStorage(Arc<RwLock<Option<ReleaseMetadata>>>);
@@ -10,6 +10,17 @@ pub struct MemoryStorage(Arc<RwLock<Option<ReleaseMetadata>>>);
 impl crate::domain::prelude::ReleaseStore for MemoryStorage {
     async fn insert(&self, entry: ReleaseMetadata) {
         self.0.write().await.replace(entry);
+    }
+
+    async fn find_package_by_asset(&self, asset: &DebAsset) -> Option<Package> {
+        self.0
+            .read()
+            .await
+            .iter()
+            .flat_map(|meta| meta.architectures.iter())
+            .flat_map(|arch| arch.packages.iter())
+            .find(|pkg| pkg.asset.asset_id == asset.asset_id)
+            .cloned()
     }
 
     async fn fetch(&self) -> Option<ReleaseMetadata> {

@@ -140,6 +140,10 @@ mockall::mock! {
 /// Caches package metadata and assets.
 pub trait ReleaseStore: Send + Sync + 'static {
     fn insert(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
+    fn find_package_by_asset(
+        &self,
+        asset: &DebAsset,
+    ) -> impl Future<Output = Option<Package>> + Send;
     fn fetch(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
 }
 
@@ -153,6 +157,7 @@ mockall::mock! {
 
     impl ReleaseStore for ReleaseStore {
         fn insert(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
+        fn find_package_by_asset(&self, asset: &DebAsset) -> impl Future<Output = Option<Package>> + Send;
         fn fetch(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
     }
 }

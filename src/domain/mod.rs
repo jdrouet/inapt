@@ -10,8 +10,6 @@ use flate2::{Compression, write::GzEncoder};
 use futures::{StreamExt, TryStreamExt};
 use sha2::Digest;
 
-use crate::domain::entity::Package;
-
 pub(crate) mod entity;
 pub(crate) mod prelude;
 
@@ -86,7 +84,7 @@ where
         received.ok_or(prelude::GetReleaseFileError::NotFound)
     }
 
-    async fn package(&self, name: &str, filename: &str) -> anyhow::Result<Option<Package>> {
+    async fn package(&self, name: &str, filename: &str) -> anyhow::Result<Option<entity::Package>> {
         let Some(received) = self.release_storage.fetch().await else {
             return Ok(None);
         };
@@ -101,32 +99,41 @@ where
 
 impl<C, PS, RS, DE> AptRepositoryService<C, PS, RS, DE>
 where
-    C: crate::domain::prelude::Clock,
-    PS: crate::domain::prelude::PackageSource,
-    RS: crate::domain::prelude::ReleaseStore,
-    DE: crate::domain::prelude::DebMetadataExtractor,
+    C: prelude::Clock,
+    PS: prelude::PackageSource,
+    RS: prelude::ReleaseStore,
+    DE: prelude::DebMetadataExtractor,
 {
     async fn fetch_package(&self, asset: entity::DebAsset) -> anyhow::Result<entity::Package> {
         let deb_file = self.package_source.fetch_deb(&asset).await?;
         let metadata = self.deb_extractor.extract_metadata(deb_file.path()).await?;
         Ok(entity::Package { metadata, asset })
     }
-}
 
-impl<C, PS, RS, DE> AptRepositoryService<C, PS, RS, DE>
-where
-    C: prelude::Clock,
-    PS: prelude::PackageSource,
-    RS: prelude::ReleaseStore,
-    DE: prelude::DebMetadataExtractor,
-{
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            repo.owner = asset.repo_owner,
+            repo.name = asset.repo_name,
+            filename = asset.filename,
+        ),
+        err(Debug),
+    )]
+    async fn handle_package(&self, asset: entity::DebAsset) -> anyhow::Result<entity::Package> {
+        if let Some(package) = self.release_storage.find_package_by_asset(&asset).await {
+            tracing::debug!("package already known, using cached value");
+            return Ok(package);
+        }
+        self.fetch_package(asset).await
+    }
+
     #[tracing::instrument(skip(self), err(Debug))]
     async fn synchronize_repo(&self, repo: &str) -> anyhow::Result<()> {
         tracing::info!("listing assets");
         let list = self.package_source.list_deb_assets(repo).await?;
         let list = futures::stream::iter(
             list.into_iter()
-                .map(|asset| async move { self.fetch_package(asset).await }),
+                .map(|asset| async move { self.handle_package(asset).await }),
         )
         .buffer_unordered(5)
         .try_collect::<Vec<_>>()
@@ -177,7 +184,7 @@ impl ReleaseMetadataBuilder {
         }
     }
 
-    fn insert(&mut self, package: Package) {
+    fn insert(&mut self, package: entity::Package) {
         self.architectures
             .entry(package.metadata.control.architecture.clone())
             .or_default()
@@ -205,11 +212,11 @@ impl ReleaseMetadataBuilder {
 
 #[derive(Debug, Default)]
 struct ArchitectureMetadataBuilder {
-    packages: BTreeMap<String, BTreeMap<String, Package>>,
+    packages: BTreeMap<String, BTreeMap<String, entity::Package>>,
 }
 
 impl ArchitectureMetadataBuilder {
-    fn insert(&mut self, package: Package) {
+    fn insert(&mut self, package: entity::Package) {
         let packages = self
             .packages
             .entry(package.metadata.control.package.clone())
@@ -268,7 +275,7 @@ impl ArchitectureMetadataBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::entity::{DebAsset, FileMetadata, PackageControl, PackageMetadata};
+    use crate::domain::entity::{DebAsset, FileMetadata, Package, PackageControl, PackageMetadata};
     use crate::domain::prelude::{
         AptRepositoryWriter, MockDebMetadataExtractor, MockPackageSource, MockReleaseStore,
     };
@@ -295,7 +302,7 @@ mod tests {
             repositories: vec!["testrepo".to_string()],
         });
         let mut builder = ReleaseMetadataBuilder::new(config);
-        builder.insert(Package {
+        builder.insert(entity::Package {
             metadata: PackageMetadata {
                 control: PackageControl {
                     package: "libcaca".into(),
@@ -365,16 +372,28 @@ SHA256:
             .returning(|repo| {
                 let repo = repo.to_string();
                 Box::pin(async move {
-                    Ok(vec![DebAsset {
-                        repo_owner: "owner".to_string(),
-                        repo_name: repo.clone(),
-                        release_id: 1,
-                        asset_id: 1,
-                        filename: "pkg_1.0.0_amd64.deb".to_string(),
-                        url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
-                        size: 1234,
-                        sha256: Some("deadbeef".to_string()),
-                    }])
+                    Ok(vec![
+                        DebAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: repo.clone(),
+                            release_id: 1,
+                            asset_id: 1,
+                            filename: "pkg_1.0.0_amd64.deb".to_string(),
+                            url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
+                            size: 1234,
+                            sha256: Some("deadbeef".to_string()),
+                        },
+                        DebAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: repo.clone(),
+                            release_id: 1,
+                            asset_id: 2,
+                            filename: "pkg_1.0.0_arm64.deb".to_string(),
+                            url: "http://example.com/pkg_1.0.0_arm64.deb".to_string(),
+                            size: 1234,
+                            sha256: Some("deadbit".to_string()),
+                        },
+                    ])
                 })
             });
         mock_package_source
@@ -385,6 +404,36 @@ SHA256:
         mock_release_store
             .expect_insert()
             .returning(|_entry| Box::pin(async {}));
+        mock_release_store
+            .expect_find_package_by_asset()
+            .returning(|asset| {
+                let asset = asset.clone();
+                Box::pin(async move {
+                    if asset.asset_id == 2 {
+                        Some(Package {
+                            metadata: PackageMetadata {
+                                control: PackageControl {
+                                    package: "pkg".to_string(),
+                                    version: "1.0.0".to_string(),
+                                    section: Some("main".to_string()),
+                                    priority: "optional".to_string(),
+                                    architecture: "arm64".to_string(),
+                                    maintainer: "Tester <test@example.com>".to_string(),
+                                    description: vec!["A test package".to_string()],
+                                    others: HashMap::new(),
+                                },
+                                file: FileMetadata {
+                                    size: 1234,
+                                    sha256: "deadbit".to_string(),
+                                },
+                            },
+                            asset: asset.clone(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+            });
         mock_release_store
             .expect_fetch()
             .returning(|| Box::pin(async { None }));
@@ -413,7 +462,7 @@ SHA256:
                 })
             });
 
-        let service = AptRepositoryService {
+        let mut service = AptRepositoryService {
             config,
             clock: PhantomData::<UniqueClock>,
             package_source: mock_package_source,
@@ -422,6 +471,9 @@ SHA256:
         };
         let result = AptRepositoryWriter::synchronize(&service).await;
         assert!(result.is_ok());
+        service.deb_extractor.checkpoint();
+        service.package_source.checkpoint();
+        service.release_storage.checkpoint();
     }
 
     #[tokio::test]
