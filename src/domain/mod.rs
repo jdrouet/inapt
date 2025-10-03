@@ -65,7 +65,7 @@ where
     DE: Send + Sync + 'static,
 {
     async fn list_packages(&self, arch: &str) -> anyhow::Result<Vec<entity::Package>> {
-        let Some(received) = self.release_storage.fetch().await else {
+        let Some(received) = self.release_storage.find_latest_release().await else {
             return Ok(Vec::new());
         };
         Ok(received
@@ -80,12 +80,12 @@ where
     async fn release_metadata(
         &self,
     ) -> Result<entity::ReleaseMetadata, prelude::GetReleaseFileError> {
-        let received = self.release_storage.fetch().await;
+        let received = self.release_storage.find_latest_release().await;
         received.ok_or(prelude::GetReleaseFileError::NotFound)
     }
 
     async fn package(&self, name: &str, filename: &str) -> anyhow::Result<Option<entity::Package>> {
-        let Some(received) = self.release_storage.fetch().await else {
+        let Some(received) = self.release_storage.find_latest_release().await else {
             return Ok(None);
         };
         Ok(received
@@ -142,7 +142,9 @@ where
         list.into_iter().for_each(|item| {
             builder.insert(item);
         });
-        self.release_storage.insert(builder.build::<C>()?).await;
+        self.release_storage
+            .insert_release(builder.build::<C>()?)
+            .await;
         Ok(())
     }
 }
@@ -402,7 +404,7 @@ SHA256:
 
         let mut mock_release_store = MockReleaseStore::new();
         mock_release_store
-            .expect_insert()
+            .expect_insert_release()
             .returning(|_entry| Box::pin(async {}));
         mock_release_store
             .expect_find_package_by_asset()
@@ -435,7 +437,7 @@ SHA256:
                 })
             });
         mock_release_store
-            .expect_fetch()
+            .expect_find_latest_release()
             .returning(|| Box::pin(async { None }));
 
         let mut mock_deb_extractor = MockDebMetadataExtractor::new();
@@ -498,10 +500,10 @@ SHA256:
 
         let mut mock_release_store = MockReleaseStore::new();
         mock_release_store
-            .expect_insert()
+            .expect_insert_release()
             .returning(|_entry| Box::pin(async {}));
         mock_release_store
-            .expect_fetch()
+            .expect_find_latest_release()
             .returning(|| Box::pin(async { None }));
 
         let mut mock_deb_extractor = MockDebMetadataExtractor::new();
@@ -584,10 +586,12 @@ SHA256:
             components: vec!["main".to_string()],
             description: "Test repo".into(),
         };
-        mock_release_store.expect_fetch().returning(move || {
-            let release_meta = release_meta.clone();
-            Box::pin(async move { Some(release_meta) })
-        });
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(move || {
+                let release_meta = release_meta.clone();
+                Box::pin(async move { Some(release_meta) })
+            });
 
         let service = AptRepositoryService {
             config,
@@ -618,7 +622,7 @@ SHA256:
 
         let mut mock_release_store = MockReleaseStore::new();
         mock_release_store
-            .expect_fetch()
+            .expect_find_latest_release()
             .returning(|| Box::pin(async { None }));
 
         let service = AptRepositoryService {
@@ -659,10 +663,12 @@ SHA256:
             components: vec!["main".to_string()],
             description: "Test repo".into(),
         };
-        mock_release_store.expect_fetch().returning(move || {
-            let release_meta = release_meta.clone();
-            Box::pin(async move { Some(release_meta) })
-        });
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(move || {
+                let release_meta = release_meta.clone();
+                Box::pin(async move { Some(release_meta) })
+            });
 
         let service = AptRepositoryService {
             config,
@@ -691,7 +697,7 @@ SHA256:
 
         let mut mock_release_store = MockReleaseStore::new();
         mock_release_store
-            .expect_fetch()
+            .expect_find_latest_release()
             .returning(|| Box::pin(async { None }));
 
         let service = AptRepositoryService {

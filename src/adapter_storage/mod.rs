@@ -8,7 +8,7 @@ use crate::domain::entity::{DebAsset, Package, ReleaseMetadata};
 pub struct MemoryStorage(Arc<RwLock<Option<ReleaseMetadata>>>);
 
 impl crate::domain::prelude::ReleaseStore for MemoryStorage {
-    async fn insert(&self, entry: ReleaseMetadata) {
+    async fn insert_release(&self, entry: ReleaseMetadata) {
         self.0.write().await.replace(entry);
     }
 
@@ -23,7 +23,7 @@ impl crate::domain::prelude::ReleaseStore for MemoryStorage {
             .cloned()
     }
 
-    async fn fetch(&self) -> Option<ReleaseMetadata> {
+    async fn find_latest_release(&self) -> Option<ReleaseMetadata> {
         self.0.read().await.clone()
     }
 }
@@ -36,7 +36,7 @@ mod tests {
     async fn should_insert_and_fetch_data() {
         let storage = super::MemoryStorage::default();
         storage
-            .insert(crate::domain::entity::ReleaseMetadata {
+            .insert_release(crate::domain::entity::ReleaseMetadata {
                 origin: "origin".into(),
                 label: "label".into(),
                 suite: "suite".into(),
@@ -48,7 +48,7 @@ mod tests {
                 description: "whatever".into(),
             })
             .await;
-        let res = storage.fetch().await.unwrap();
+        let res = storage.find_latest_release().await.unwrap();
         assert_eq!(res.origin, "origin");
     }
 }
