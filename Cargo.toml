@@ -52,4 +52,5 @@ assets = [
 [package.metadata.deb.systemd-units]
 unit-scripts = "package/systemd/"
 enable = true
+restart-after-upgrade = true
 start = true
