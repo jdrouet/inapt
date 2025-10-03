@@ -19,8 +19,14 @@ chrono = { version = "0.4", default-features = false, features = ["now"] }
 flate2 = "1"     # for .gz
 futures = "0.3"
 hex = "0.4"
+hostname = "0.4"
 md-5 = "0.10"
 octocrab = { version = "0.46" }
+opentelemetry = { version = "0.31", default-features = false }
+opentelemetry-appender-tracing = { version = "0.31", default-features = false }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["grpc-tonic", "tls-roots"] }
+opentelemetry-semantic-conventions = { version = "0.31", default-features = false }
+opentelemetry_sdk = { version = "0.31", default-features = false, features = ["rt-tokio"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 secrecy = { version = "0.10", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
@@ -30,11 +36,22 @@ tar = "0.4"
 temp-file = "0.1"
 thiserror = "2.0"
 tokio = { version = "1.47", default-features = false, features = ["fs", "macros", "net", "rt-multi-thread"] }
-tower-http = { version = "0.6.6", features = ["trace"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = { version = "0.1" }
+tracing-opentelemetry = { version = "0.32", default-features = false }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
 xz2 = "0.1"      # for .xz
 zstd = "0.13"    # for .zst
+
+# opentelemetry.workspace = true
+# opentelemetry-otlp = { workspace = true, features = ["grpc-tonic", "tls-roots"] }
+# opentelemetry-semantic-conventions.workspace = true
+# opentelemetry_sdk = { workspace = true, features = ["rt-tokio"] }
+# opentelemetry-appender-tracing = { version = "0.30", features = [
+#     "experimental_metadata_attributes",
+#     "experimental_use_tracing_span_context",
+# ] }
+# tracing-opentelemetry.workspace = true
 
 [dev-dependencies]
 mockall = "0.13"

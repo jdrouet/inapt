@@ -11,6 +11,8 @@ mod adapter_storage;
 mod adapter_worker;
 mod domain;
 
+pub mod tracing;
+
 fn maybe_env(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
@@ -40,7 +42,7 @@ where
 
 fn with_env_as_many(name: &str, delim: &str) -> Vec<String> {
     let Ok(value) = std::env::var(name) else {
-        tracing::warn!("no repository configured");
+        ::tracing::warn!("no repository configured");
         return Vec::default();
     };
     value
