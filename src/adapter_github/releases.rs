@@ -16,7 +16,7 @@ impl crate::domain::prelude::PackageSource for super::Client {
             .open(file.path())
             .await?;
 
-        let mut byte_stream = reqwest::get(&asset.url).await?.bytes_stream();
+        let mut byte_stream = self.inner.get(&asset.url).send().await?.bytes_stream();
         tracing::info!("downloading file");
         while let Some(item) = byte_stream.next().await {
             tokio::io::copy(&mut item?.as_ref(), &mut tmp_file).await?;
