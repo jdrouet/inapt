@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/jdrouet/inapt/compare/v0.1.2...v0.1.3) - 2025-10-04
+
+### Added
+
+- configure for opentelemetry collector
+- prepare for console logs
+
+### Fixed
+
+- remove log
+
+### Other
+
+- prevent building docker image for arm64
+- use reqwest to query releases
+
 ## [0.1.2](https://github.com/jdrouet/inapt/compare/v0.1.1...v0.1.2) - 2025-10-03
 
 ### Added
