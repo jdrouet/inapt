@@ -104,12 +104,6 @@ where
     RS: prelude::ReleaseStore,
     DE: prelude::DebMetadataExtractor,
 {
-    async fn fetch_package(&self, asset: entity::DebAsset) -> anyhow::Result<entity::Package> {
-        let deb_file = self.package_source.fetch_deb(&asset).await?;
-        let metadata = self.deb_extractor.extract_metadata(deb_file.path()).await?;
-        Ok(entity::Package { metadata, asset })
-    }
-
     #[tracing::instrument(
         skip(self),
         fields(
@@ -119,12 +113,22 @@ where
         ),
         err(Debug),
     )]
-    async fn handle_package(&self, asset: entity::DebAsset) -> anyhow::Result<entity::Package> {
+    async fn handle_package(
+        &self,
+        asset: entity::DebAsset,
+    ) -> anyhow::Result<Option<entity::Package>> {
         if let Some(package) = self.release_storage.find_package_by_asset(&asset).await {
             tracing::debug!("package already known, using cached value");
-            return Ok(package);
+            return Ok(Some(package));
         }
-        self.fetch_package(asset).await
+        let deb_file = self.package_source.fetch_deb(&asset).await?;
+        match self.deb_extractor.extract_metadata(deb_file.path()).await {
+            Ok(metadata) => Ok(Some(entity::Package { metadata, asset })),
+            Err(err) => {
+                tracing::warn!(error = ?err, "unable to extract metadata");
+                Ok(None)
+            }
+        }
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -140,7 +144,9 @@ where
         .await?;
         let mut builder = ReleaseMetadataBuilder::new(self.config.clone());
         list.into_iter().for_each(|item| {
-            builder.insert(item);
+            if let Some(item) = item {
+                builder.insert(item);
+            }
         });
         self.release_storage
             .insert_release(builder.build::<C>()?)
