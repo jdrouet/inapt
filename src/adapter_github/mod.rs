@@ -13,6 +13,7 @@ mod releases;
 pub struct Config {
     base_url: Cow<'static, str>,
     max_retry: u32,
+    timeout: u64,
     token: Option<String>,
 }
 
@@ -22,6 +23,7 @@ impl Config {
             base_url: crate::with_env_or("GITHUB_BASE_URL", "https://api.github.com"),
             token: crate::maybe_env("GITHUB_TOKEN"),
             max_retry: crate::with_env_as_or("GITHUB_MAX_RETRY", 5)?,
+            timeout: crate::with_env_as_or("GITHUB_TIMEOUT", 60)?,
         })
     }
 
@@ -44,7 +46,7 @@ impl Config {
         );
         let client = reqwest::Client::builder()
             .default_headers(headers)
-            .timeout(std::time::Duration::from_secs(20))
+            .timeout(std::time::Duration::from_secs(self.timeout))
             .tcp_keepalive(std::time::Duration::from_secs(30))
             .build()?;
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(self.max_retry);
