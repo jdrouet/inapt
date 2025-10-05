@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/jdrouet/inapt/compare/v0.1.5...v0.1.6) - 2025-10-05
+
+### Added
+
+- add peer.hostname to client tracing
+
+### Other
+
+- use generic span name
+
 ## [0.1.5](https://github.com/jdrouet/inapt/compare/v0.1.4...v0.1.5) - 2025-10-05
 
 ### Added
