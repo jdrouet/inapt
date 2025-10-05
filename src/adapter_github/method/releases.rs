@@ -68,7 +68,6 @@ impl<'a> ReleaseStreamer<'a> {
     }
 
     pub(crate) async fn next(&mut self) -> anyhow::Result<Option<Release>> {
-        tracing::info!(has_more = self.has_more, cache = self.cache.len(), "next");
         while self.has_more || !self.cache.is_empty() {
             if let Some(item) = self.cache.pop_front() {
                 return Ok(Some(item));

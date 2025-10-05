@@ -132,7 +132,11 @@ where
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    async fn synchronize_repo(&self, repo: &str) -> anyhow::Result<()> {
+    async fn synchronize_repo(
+        &self,
+        repo: &str,
+        builder: &mut ReleaseMetadataBuilder,
+    ) -> anyhow::Result<()> {
         tracing::info!("listing assets");
         let list = self.package_source.list_deb_assets(repo).await?;
         let list = futures::stream::iter(
@@ -142,15 +146,11 @@ where
         .buffer_unordered(5)
         .try_collect::<Vec<_>>()
         .await?;
-        let mut builder = ReleaseMetadataBuilder::new(self.config.clone());
         list.into_iter().for_each(|item| {
             if let Some(item) = item {
                 builder.insert(item);
             }
         });
-        self.release_storage
-            .insert_release(builder.build::<C>()?)
-            .await;
         Ok(())
     }
 }
@@ -164,13 +164,16 @@ where
 {
     #[tracing::instrument(skip(self), err(Debug))]
     async fn synchronize(&self) -> anyhow::Result<()> {
+        let mut builder = ReleaseMetadataBuilder::new(self.config.clone());
         let mut errors = Vec::with_capacity(self.config.repositories.len());
         for repo in self.config.repositories.iter() {
-            if let Err(err) = self.synchronize_repo(repo.as_str()).await {
+            if let Err(err) = self.synchronize_repo(repo.as_str(), &mut builder).await {
                 errors.push(err);
             }
         }
+        let release = builder.build::<C>()?;
         if errors.is_empty() {
+            self.release_storage.insert_release(release).await;
             Ok(())
         } else {
             Err(anyhow::anyhow!("synchronization failed"))
