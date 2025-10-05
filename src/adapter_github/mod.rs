@@ -2,10 +2,10 @@ use std::{borrow::Cow, sync::Arc};
 
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
-use reqwest_tracing::TracingMiddleware;
 
 pub(crate) mod entity;
 mod method;
+mod middleware;
 mod releases;
 
 pub struct Config {
@@ -48,7 +48,7 @@ impl Config {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(self.max_retry);
         let inner = reqwest_middleware::ClientBuilder::new(client)
             // Trace HTTP requests. See the tracing crate to make use of these traces.
-            .with(TracingMiddleware::default())
+            .with(middleware::TracingMiddleware::default())
             // Retry failed requests.
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();

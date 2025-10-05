@@ -771,11 +771,13 @@ version = "0.1.4"
 dependencies = [
  "anyhow",
  "ar",
+ "async-trait",
  "axum",
  "chrono",
  "flate2",
  "futures",
  "hex",
+ "http",
  "md-5",
  "mockall",
  "opentelemetry",
@@ -786,7 +788,6 @@ dependencies = [
  "reqwest",
  "reqwest-middleware",
  "reqwest-retry",
- "reqwest-tracing",
  "serde",
  "serde_json",
  "sha2",
@@ -1556,22 +1557,6 @@ dependencies = [
  "tokio",
  "tracing",
  "wasm-timer",
-]
-
-[[package]]
-name = "reqwest-tracing"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d70ea85f131b2ee9874f0b160ac5976f8af75f3c9badfe0d955880257d10bd83"
-dependencies = [
- "anyhow",
- "async-trait",
- "getrandom 0.2.16",
- "http",
- "matchit",
- "reqwest",
- "reqwest-middleware",
- "tracing",
 ]
 
 [[package]]
