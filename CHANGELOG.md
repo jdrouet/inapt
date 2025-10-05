@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/jdrouet/inapt/compare/v0.1.6...v0.1.7) - 2025-10-05
+
+### Added
+
+- add environment to telemetry
+- add github timeout
+- add span name to http server
+- update client traces
+
+### Other
+
+- remove service name
+- update dockerfile to have revision parameter
+
 ## [0.1.6](https://github.com/jdrouet/inapt/compare/v0.1.5...v0.1.6) - 2025-10-05
 
 ### Added
