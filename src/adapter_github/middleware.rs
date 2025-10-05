@@ -18,36 +18,39 @@ impl Middleware for TracingMiddleware {
         let span_name = create_span_name(&req, extensions);
         let span = tracing::info_span!(
             "http.client.request",
-            error.type = tracing::field::Empty,
-            error.message = tracing::field::Empty,
-            error.stacktrace = tracing::field::Empty,
-            http.request.method = %req.method(),
-            http.response.status_code = tracing::field::Empty,
-            network.peer.address = tracing::field::Empty,
-            network.peer.port = tracing::field::Empty,
-            network.protocol.name = "http",
-            network.protocol.version = ?req.version(),
-            otel.status_code = tracing::field::Empty,
-            otel.status_description = tracing::field::Empty,
-            peer.service = "github",
-            peer.hostname = tracing::field::Empty,
-            resource.name = span_name,
-            server.address = tracing::field::Empty,
-            server.port = tracing::field::Empty,
-            span.kind = "client",
-            span.type = "http",
-            span.name = span_name,
-            url.path = req.url().path(),
-            url.scheme = req.url().scheme(),
+            "error.type" = tracing::field::Empty,
+            "error.message" = tracing::field::Empty,
+            "error.stacktrace" = tracing::field::Empty,
+            "http.request.method" = %req.method(),
+            "http.response.status_code" = tracing::field::Empty,
+            "network.protocol.name" = "http",
+            "network.protocol.version" = ?req.version(),
+            "otel.kind" = "client",
+            "otel.name" = span_name,
+            "otel.status_code" = tracing::field::Empty,
+            "otel.status_description" = tracing::field::Empty,
+            "peer.service" = "github",
+            "resource.name" = span_name,
+            "server.address" = tracing::field::Empty,
+            "server.port" = tracing::field::Empty,
+            "span.kind" = "client",
+            "span.type" = "http",
+            "span.name" = span_name,
+            "url.path" = req.url().path(),
+            "url.scheme" = req.url().scheme(),
+            // deprecated
+            "http.host" = tracing::field::Empty,
+            "http.method" = %req.method(),
+            "http.scheme" = req.url().scheme(),
+            "net.host.port" = tracing::field::Empty,
         );
         if let Some(host) = req.url().host_str() {
-            span.record("peer.hostname", host);
-            span.record(semver::SERVER_ADDRESS, host);
-            span.record(semver::NETWORK_PEER_ADDRESS, host);
+            span.record("server.address", host);
+            span.record("http.host", host);
         }
         if let Some(port) = req.url().port() {
-            span.record(semver::SERVER_PORT, port);
-            span.record(semver::NETWORK_PEER_PORT, port);
+            span.record("server.port", port);
+            span.record("net.host.port", port);
         }
 
         let _ = span.enter();
