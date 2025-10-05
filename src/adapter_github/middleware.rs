@@ -29,6 +29,7 @@ impl Middleware for TracingMiddleware {
             otel.status_code = tracing::field::Empty,
             otel.status_description = tracing::field::Empty,
             peer.service = "github",
+            peer.hostname = tracing::field::Empty,
             resource.name = span_name,
             server.address = tracing::field::Empty,
             server.port = tracing::field::Empty,
@@ -39,6 +40,7 @@ impl Middleware for TracingMiddleware {
             url.scheme = req.url().scheme(),
         );
         if let Some(host) = req.url().host_str() {
+            span.record("peer.hostname", host);
             span.record(semver::SERVER_ADDRESS, host);
             span.record(semver::NETWORK_PEER_ADDRESS, host);
         }
