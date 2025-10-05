@@ -64,6 +64,7 @@ impl ConsoleConfig {
 pub struct OtelConfig {
     endpoint: Cow<'static, str>,
     internal_level: Cow<'static, str>,
+    environment: Cow<'static, str>,
 }
 
 impl OtelConfig {
@@ -71,6 +72,7 @@ impl OtelConfig {
         Ok(Self {
             endpoint: crate::with_env_or("TRACING_OTEL_ENDPOINT", "http://localhost:4317"),
             internal_level: crate::with_env_or("TRACING_OTEL_INTERNAL_LEVEL", "error"),
+            environment: crate::with_env_or("ENV", "local"),
         })
     }
 
@@ -78,6 +80,7 @@ impl OtelConfig {
         [
             KeyValue::new(semver::SERVICE_NAME, env!("CARGO_PKG_NAME")),
             KeyValue::new(semver::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            KeyValue::new("env", self.environment.to_string()),
         ]
     }
 
