@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/jdrouet/inapt/compare/v0.1.7...v0.1.8) - 2025-10-05
+
+### Fixed
+
+- allow to follow multiple repositories
+
+### Other
+
+- ignore RUSTSEC-2024-0384 considering it's not relevent
+
 ## [0.1.7](https://github.com/jdrouet/inapt/compare/v0.1.6...v0.1.7) - 2025-10-05
 
 ### Added
