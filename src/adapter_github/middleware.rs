@@ -29,7 +29,6 @@ impl Middleware for TracingMiddleware {
             "otel.name" = span_name,
             "otel.status_code" = tracing::field::Empty,
             "otel.status_description" = tracing::field::Empty,
-            "peer.service" = "github",
             "resource.name" = span_name,
             "server.address" = tracing::field::Empty,
             "server.port" = tracing::field::Empty,
