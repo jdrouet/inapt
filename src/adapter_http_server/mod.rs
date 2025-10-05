@@ -1,7 +1,7 @@
 use anyhow::Context;
-use tower_http::trace::TraceLayer;
 
 mod handler;
+mod middleware;
 
 const DEFAULT_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 const DEFAULT_PORT: u16 = 3000;
@@ -51,7 +51,7 @@ where
 {
     pub fn build(self) -> anyhow::Result<Server> {
         let router = handler::build()
-            .layer(TraceLayer::new_for_http())
+            .layer(middleware::tracing::layer())
             .with_state(ServerState {
                 apt_repository: self
                     .apt_repository
