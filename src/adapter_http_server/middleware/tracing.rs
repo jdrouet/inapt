@@ -28,6 +28,7 @@ pub(crate) struct SpanCreator;
 impl<B> MakeSpan<B> for SpanCreator {
     fn make_span(&mut self, req: &http::Request<B>) -> tracing::Span {
         let uri = req.uri();
+        let span_name = format!("{} {uri}", req.method());
         let span = tracing::info_span!(
             parent: None,
             "http.server.request",
@@ -38,11 +39,14 @@ impl<B> MakeSpan<B> for SpanCreator {
             "http.request.method" = %req.method(),
             "http.response.status_code" = tracing::field::Empty,
             "network.protocol.version" = ?req.version(),
+            "otel.kind" = "server",
+            "otel.name" = span_name,
             "otel.status_code" = tracing::field::Empty,
             "otel.status_description" = tracing::field::Empty,
-            "resource.name" = format!("{} {uri}", req.method()),
+            "resource.name" = span_name,
             "server.address" = tracing::field::Empty,
             "server.port" = tracing::field::Empty,
+            "span.name" = span_name,
             "span.kind" = "server",
             "span.type" = "web",
             "url.full" = %uri,
