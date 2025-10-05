@@ -1,3 +1,5 @@
+ARG DEB_REVISION=1
+
 FROM --platform=$BUILDPLATFORM rust:1-bookworm AS vendor
 
 ENV USER=root
@@ -36,6 +38,7 @@ COPY --from=vendor /code/vendor /code/vendor
 
 FROM base AS builder
 
+ARG DEB_REVISION
 # https://docs.docker.com/engine/reference/builder/#run---mounttypecache
 RUN --mount=type=cache,target=$CARGO_HOME/git,sharing=locked \
     --mount=type=cache,target=$CARGO_HOME/registry,sharing=locked \
@@ -44,7 +47,7 @@ RUN --mount=type=cache,target=$CARGO_HOME/git,sharing=locked \
     --mount=type=cache,target=/core/target/release/deps,sharing=locked \
     --mount=type=cache,target=/core/target/release/examples,sharing=locked \
     --mount=type=cache,target=/core/target/release/incremental,sharing=locked \
-    cargo deb
+    cargo deb --deb-revision ${DEB_REVISION}
 
 FROM scratch
 
