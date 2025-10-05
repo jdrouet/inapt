@@ -1,7 +1,9 @@
 use std::{borrow::Cow, sync::Arc};
 
 use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest_middleware::Extension;
 use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
+use reqwest_tracing::OtelPathNames;
 
 pub(crate) mod entity;
 mod method;
@@ -51,6 +53,10 @@ impl Config {
             .with(middleware::TracingMiddleware)
             // Retry failed requests.
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .with_init(Extension(OtelPathNames::known_paths([
+                "/repos/{repo_owner}/{repo_name}/releases",
+                "/{repo_owner}/{repo_name}/releases/download/{release}/{filename}",
+            ])?))
             .build();
         let base_url = Arc::from(self.base_url);
         Ok(Client { base_url, inner })

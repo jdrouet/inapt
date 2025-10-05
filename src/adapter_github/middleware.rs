@@ -1,6 +1,7 @@
 use opentelemetry_semantic_conventions::attribute as semver;
 use reqwest::Request;
 use reqwest_middleware::Middleware;
+use reqwest_tracing::OtelPathNames;
 use tracing::Instrument;
 
 #[derive(Clone, Debug, Default)]
@@ -14,7 +15,7 @@ impl Middleware for TracingMiddleware {
         extensions: &mut http::Extensions,
         next: reqwest_middleware::Next<'_>,
     ) -> reqwest_middleware::Result<reqwest::Response> {
-        let span_name = format!("{} {}", req.method(), req.url().path());
+        let span_name = create_span_name(&req, extensions);
         let span = tracing::info_span!(
             "http.client.request",
             error.type = tracing::field::Empty,
@@ -91,5 +92,19 @@ impl Middleware for TracingMiddleware {
                     span.record(semver::ERROR_TYPE, "client");
                 }
             })
+    }
+}
+
+fn create_span_name(req: &Request, ext: &http::Extensions) -> String {
+    if let Some(path_names) = ext.get::<OtelPathNames>() {
+        path_names
+            .find(req.url().path())
+            .map(|path| format!("{} {}", req.method(), path))
+            .unwrap_or_else(|| {
+                tracing::warn!("no OTEL path name found");
+                format!("{} {}", req.method(), req.url().path())
+            })
+    } else {
+        format!("{} {}", req.method(), req.url().path())
     }
 }
