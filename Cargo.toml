@@ -1,6 +1,6 @@
 [package]
 name = "inapt"
-version = "0.1.8"
+version = "0.2.0"
 edition = "2024"
 description = "A minimal Debian/Ubuntu APT repository proxy written in Rust. Exposes a valid APT repo structure over HTTP, sourcing .deb packages from GitHub Releases."
 documentation = "https://docs.rs/inapt"
