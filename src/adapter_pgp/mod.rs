@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 use anyhow::Context;
 use sequoia_openpgp::{
@@ -25,7 +25,40 @@ impl Config {
         })
     }
 
+    fn generate_private_key(&self) -> anyhow::Result<()> {
+        use sequoia_openpgp::{cert::CertBuilder, serialize::Serialize, types::KeyFlags};
+
+        let (cert, _) = CertBuilder::new()
+            .set_validity_period(None)
+            .add_subkey(
+                KeyFlags::empty().set_transport_encryption().set_group_key(),
+                None,
+                None,
+            )
+            .add_signing_subkey()
+            .add_certification_subkey()
+            .add_storage_encryption_subkey()
+            .generate()?;
+
+        let mut output = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&self.private_key_path)
+            .context("unable to create file")?;
+        cert.as_tsk().armored().serialize(&mut output)?;
+        output
+            .flush()
+            .context("unable to flush private key content")?;
+
+        Ok(())
+    }
+
     pub fn build(self) -> anyhow::Result<PGPClient> {
+        if !self.private_key_path.exists() {
+            self.generate_private_key()?;
+        }
+
         let private_key = Cert::from_file(self.private_key_path)?;
 
         let policy = StandardPolicy::new();
