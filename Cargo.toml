@@ -11,6 +11,10 @@ keywords = ["apt", "debian", "ubuntu", "proxy", "github"]
 categories = ["command-line-utilities", "network-programming", "web-programming::http-server"]
 readme = "readme.md"
 
+[[bin]]
+name = "inapt-genkey"
+path = "src/bin/genkeys.rs"
+
 [dependencies]
 anyhow = { version = "1.0" }
 ar = "0.9"
