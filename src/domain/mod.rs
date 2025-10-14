@@ -13,38 +13,52 @@ use sha2::Digest;
 pub(crate) mod entity;
 pub(crate) mod prelude;
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize)]
 pub struct Config {
     // Origin: Debian
+    #[serde(default = "Config::default_origin")]
     pub origin: Cow<'static, str>,
     // Label: Debian
+    #[serde(default = "Config::default_label")]
     pub label: Cow<'static, str>,
     // Suite: stable
+    #[serde(default = "Config::default_suite")]
     pub suite: Cow<'static, str>,
     // Version: 12.5
+    #[serde(default = "Config::default_version")]
     pub version: Cow<'static, str>,
     // Codename: bookworm
+    #[serde(default = "Config::default_codename")]
     pub codename: Cow<'static, str>,
     // Date: Tue, 04 Jun 2024 12:34:56 UTC
     // pub date: String,
     // Architectures: amd64 arm64
     // Components: main contrib non-free
-    pub description: Cow<'static, str>,
     // Description: Debian 12.5 Release
+    #[serde(default = "Config::default_description")]
+    pub description: Cow<'static, str>,
+    #[serde(default)]
     pub repositories: Vec<String>,
 }
 
 impl Config {
-    pub fn from_env() -> anyhow::Result<Self> {
-        Ok(Self {
-            origin: crate::with_env_or("REPO_ORIGIN", "GitHub releases"),
-            label: crate::with_env_or("REPO_LABEL", "Debian"),
-            suite: crate::with_env_or("REPO_SUITE", "stable"),
-            version: crate::with_env_or("REPO_VERSION", env!("CARGO_PKG_VERSION")),
-            codename: crate::with_env_or("REPO_CODENAME", "cucumber"),
-            description: crate::with_env_or("REPO_DESCRIPTION", "GitHub releases proxy"),
-            repositories: crate::with_env_as_many("REPO_REPOSITORIES", ","),
-        })
+    pub const fn default_origin() -> Cow<'static, str> {
+        Cow::Borrowed("GitHub releases")
+    }
+    pub const fn default_label() -> Cow<'static, str> {
+        Cow::Borrowed("Debian")
+    }
+    pub const fn default_suite() -> Cow<'static, str> {
+        Cow::Borrowed("Stable")
+    }
+    pub const fn default_version() -> Cow<'static, str> {
+        Cow::Borrowed("0.1.0")
+    }
+    pub const fn default_codename() -> Cow<'static, str> {
+        Cow::Borrowed("cucumber")
+    }
+    pub const fn default_description() -> Cow<'static, str> {
+        Cow::Borrowed("GitHub releases proxy")
     }
 }
 

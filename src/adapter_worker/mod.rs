@@ -2,15 +2,15 @@ use std::time::Duration;
 
 use anyhow::Context;
 
+#[derive(serde::Deserialize)]
 pub struct Config {
+    #[serde(default = "Config::default_interval")]
     interval: u64,
 }
 
 impl Config {
-    pub fn from_env() -> anyhow::Result<Self> {
-        Ok(Self {
-            interval: crate::with_env_as_or("WORKER_INTERVAL_SYNC", 60 * 60 * 60)?,
-        })
+    pub const fn default_interval() -> u64 {
+        60 * 60 * 12 // 12h
     }
 
     pub fn builder<AR>(self) -> WorkerBuilder<AR> {

@@ -8,8 +8,10 @@ id --user inapt >/dev/null 2>&1 || \
 
 # Create default inapt data directory
 mkdir -p /var/lib/inapt
+mkdir -p /etc/inapt
 
 # Make inapt:inapt the owner of the inapt data directory
 chown -R inapt:inapt /var/lib/inapt
+chown -R inapt:inapt /etc/inapt
 
 #DEBHELPER#

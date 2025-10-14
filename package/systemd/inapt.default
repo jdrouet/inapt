@@ -1,14 +1,6 @@
 # /etc/default/inapt
 # Example environment variables for inapt
 
-# GITHUB_BASE_URL=https://api.github.com
-# GITHUB_TOKEN=token-here
-# GITHUB_MAX_RETRY=5
-
-PORT=3000
-REPO_REPOSITORIES=jdrouet/inapt
-STORAGE_PATH=/var/lib/inapt/storage.json
-
 # when tracing to console
 TRACING_MODE=console
 TRACING_CONSOLE_COLOR=false
@@ -18,4 +10,4 @@ TRACING_CONSOLE_COLOR=false
 # TRACING_OTEL_ENDPOINT=http://localhost:4317
 # TRACING_OTEL_INTERNAL_LEVEL=error
 
-PGP_PRIVATE_KEY_PATH=/var/lib/inapt/private-key.pem
+CONFIG_PATH=/etc/inapt/config.toml

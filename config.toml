@@ -1,0 +1,22 @@
+[core]
+repositories = ["jdrouet/inapt"]
+
+[github]
+base_url = "https://api.github.com"
+# max_retry = 5
+# timeout = 60
+# token = "..."
+
+[http_server]
+address = "0.0.0.0"
+port = 3000
+
+[pgp_cipher]
+private_key_path = "resources/private-key.pem"
+# passphrase = "..."
+
+[storage]
+path = "target/storage.json"
+
+[worker]
+interval = 3600 # 1h

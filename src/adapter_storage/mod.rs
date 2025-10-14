@@ -5,22 +5,18 @@ use tokio::sync::RwLock;
 
 use crate::domain::entity::{DebAsset, Package, ReleaseMetadata};
 
-#[derive(Debug)]
+const fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, serde::Deserialize)]
 pub struct Config {
     path: std::path::PathBuf,
+    #[serde(default = "default_true")]
     ignore_errors: bool,
 }
 
 impl Config {
-    pub fn from_env() -> anyhow::Result<Config> {
-        Ok(Self {
-            path: std::path::PathBuf::from(
-                crate::with_env_or("STORAGE_PATH", "./inapt-store.json").as_ref(),
-            ),
-            ignore_errors: crate::with_env_as_or("IGNORE_ERRORS", true)?,
-        })
-    }
-
     pub fn build(self) -> anyhow::Result<MemoryStorage> {
         if !self.path.exists() {
             return Ok(MemoryStorage::new(self.path));

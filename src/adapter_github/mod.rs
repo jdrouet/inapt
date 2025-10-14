@@ -10,21 +10,27 @@ mod method;
 mod middleware;
 mod releases;
 
+#[derive(serde::Deserialize)]
 pub struct Config {
+    #[serde(default = "Config::default_base_url")]
     base_url: Cow<'static, str>,
+    #[serde(default = "Config::default_max_retry")]
     max_retry: u32,
+    #[serde(default = "Config::default_timeout")]
     timeout: u64,
+    #[serde(default)]
     token: Option<String>,
 }
 
 impl Config {
-    pub fn from_env() -> anyhow::Result<Self> {
-        Ok(Config {
-            base_url: crate::with_env_or("GITHUB_BASE_URL", "https://api.github.com"),
-            token: crate::maybe_env("GITHUB_TOKEN"),
-            max_retry: crate::with_env_as_or("GITHUB_MAX_RETRY", 5)?,
-            timeout: crate::with_env_as_or("GITHUB_TIMEOUT", 60)?,
-        })
+    pub const fn default_base_url() -> Cow<'static, str> {
+        Cow::Borrowed("https://api.github.com")
+    }
+    pub const fn default_max_retry() -> u32 {
+        5
+    }
+    pub const fn default_timeout() -> u64 {
+        60
     }
 
     pub fn build(self) -> anyhow::Result<Client> {

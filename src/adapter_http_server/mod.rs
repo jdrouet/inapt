@@ -6,17 +6,20 @@ mod middleware;
 const DEFAULT_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 const DEFAULT_PORT: u16 = 3000;
 
+#[derive(serde::Deserialize)]
 pub struct Config {
+    #[serde(default = "Config::default_address")]
     address: std::net::IpAddr,
+    #[serde(default = "Config::default_port")]
     port: u16,
 }
 
 impl Config {
-    pub fn from_env() -> anyhow::Result<Config> {
-        Ok(Self {
-            address: crate::with_env_as_or("ADDRESS", DEFAULT_ADDRESS)?,
-            port: crate::with_env_as_or("PORT", DEFAULT_PORT)?,
-        })
+    pub const fn default_address() -> std::net::IpAddr {
+        DEFAULT_ADDRESS
+    }
+    pub const fn default_port() -> u16 {
+        DEFAULT_PORT
     }
 
     pub fn builder<AR>(self) -> anyhow::Result<ServerBuilder<AR>> {

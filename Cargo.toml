@@ -10,6 +10,11 @@ authors = ["Jeremie Drouet <jeremie.drouet@gmail.com>"]
 keywords = ["apt", "debian", "ubuntu", "proxy", "github"]
 categories = ["command-line-utilities", "network-programming", "web-programming::http-server"]
 readme = "readme.md"
+default-run = "inapt"
+
+[[bin]]
+name = "inapt"
+path = "src/main.rs"
 
 [[bin]]
 name = "inapt-genkey"
@@ -43,6 +48,7 @@ tar = "0.4"
 temp-file = "0.1"
 thiserror = "2.0"
 tokio = { version = "1.47", default-features = false, features = ["fs", "macros", "net", "rt-multi-thread"] }
+toml = "0.9.8"
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = { version = "0.1" }
 tracing-opentelemetry = { version = "0.32", default-features = false, features = ["metrics"] }
@@ -64,6 +70,7 @@ conf-files = ["/etc/default/inapt"]
 assets = [
     ["target/release/inapt", "/usr/bin/", "755"],
     ["package/systemd/inapt.default", "/etc/default/inapt", "600"],
+    ["package/config.toml", "/etc/inapt/config.toml.example", "600"],
 ]
 
 [package.metadata.deb.systemd-units]

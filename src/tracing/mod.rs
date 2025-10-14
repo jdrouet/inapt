@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use anyhow::Context;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{InstrumentationScope, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -13,6 +14,29 @@ use opentelemetry_semantic_conventions::attribute as semver;
 use tracing::level_filters::LevelFilter;
 use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+fn with_env_or<T>(name: &str, default_value: T) -> Cow<'static, str>
+where
+    T: Into<Cow<'static, str>>,
+{
+    std::env::var(name)
+        .ok()
+        .map(Cow::Owned)
+        .unwrap_or_else(|| default_value.into())
+}
+
+fn with_env_as_or<T>(name: &str, default_value: T) -> anyhow::Result<T>
+where
+    T: std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::error::Error + Send + Sync + 'static,
+{
+    let Ok(value) = std::env::var(name) else {
+        return Ok(default_value);
+    };
+    value
+        .parse::<T>()
+        .with_context(|| format!("unable to parse value from {name:?}"))
+}
 
 pub enum Config {
     Console(ConsoleConfig),
@@ -43,7 +67,7 @@ pub struct ConsoleConfig {
 impl ConsoleConfig {
     fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
-            color: crate::with_env_as_or("TRACING_CONSOLE_COLOR", true)?,
+            color: with_env_as_or("TRACING_CONSOLE_COLOR", true)?,
         })
     }
 
@@ -70,9 +94,9 @@ pub struct OtelConfig {
 impl OtelConfig {
     fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
-            endpoint: crate::with_env_or("TRACING_OTEL_ENDPOINT", "http://localhost:4317"),
-            internal_level: crate::with_env_or("TRACING_OTEL_INTERNAL_LEVEL", "error"),
-            environment: crate::with_env_or("ENV", "local"),
+            endpoint: with_env_or("TRACING_OTEL_ENDPOINT", "http://localhost:4317"),
+            internal_level: with_env_or("TRACING_OTEL_INTERNAL_LEVEL", "error"),
+            environment: with_env_or("ENV", "local"),
         })
     }
 

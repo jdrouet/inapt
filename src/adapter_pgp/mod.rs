@@ -10,21 +10,14 @@ use sequoia_openpgp::{
 
 mod cipher;
 
+#[derive(serde::Deserialize)]
 pub struct Config {
     private_key_path: PathBuf,
+    #[serde(default)]
     passphrase: Option<String>,
 }
 
 impl Config {
-    pub fn from_env() -> anyhow::Result<Config> {
-        Ok(Self {
-            private_key_path: std::path::PathBuf::from(
-                crate::with_env_or("PGP_PRIVATE_KEY_PATH", "./private-key.pem").as_ref(),
-            ),
-            passphrase: crate::maybe_env("PGP_PASSPHRASE"),
-        })
-    }
-
     fn generate_private_key(&self) -> anyhow::Result<()> {
         use sequoia_openpgp::{cert::CertBuilder, serialize::Serialize, types::KeyFlags};
 
