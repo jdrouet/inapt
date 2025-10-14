@@ -2,28 +2,27 @@ use axum::extract::State;
 
 use crate::adapter_http_server::ServerState;
 use crate::adapter_http_server::handler::ApiError;
-use crate::domain::prelude::GetReleaseFileError;
 
 #[tracing::instrument(skip_all, err(Debug))]
 pub async fn handler<AR>(State(state): State<ServerState<AR>>) -> Result<String, ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
 {
-    state
+    let Some(meta) = state
         .apt_repository
         .release_metadata()
         .await
-        .map(|res| res.serialize().to_string())
-        .map_err(|err| match err {
-            GetReleaseFileError::NotFound => ApiError::not_found("release not found"),
-            GetReleaseFileError::Internal(inner) => ApiError::internal(inner.to_string()),
-        })
+        .map_err(|err| ApiError::internal(err.to_string()))?
+    else {
+        return Err(ApiError::not_found("release not found"));
+    };
+    Ok(meta.serialize().to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use crate::domain::entity::ReleaseMetadata;
-    use crate::domain::prelude::{GetReleaseFileError, MockAptRepositoryService};
+    use crate::domain::prelude::MockAptRepositoryService;
 
     // Example of returned data
     //
@@ -51,7 +50,7 @@ mod tests {
         apt_repository
             .expect_release_metadata()
             .once()
-            .return_once(|| Box::pin(async move { Err(GetReleaseFileError::NotFound) }));
+            .return_once(|| Box::pin(async move { Ok(None) }));
         let state = crate::adapter_http_server::ServerState { apt_repository };
         let err = super::handler(axum::extract::State(state))
             .await
@@ -77,7 +76,7 @@ mod tests {
                     components: vec!["main".into()],
                     description: "Mirror to GitHub".into(),
                 };
-                Box::pin(async move { Ok(value) })
+                Box::pin(async move { Ok(Some(value)) })
             });
         let state = crate::adapter_http_server::ServerState { apt_repository };
         let value = super::handler(axum::extract::State(state)).await.unwrap();

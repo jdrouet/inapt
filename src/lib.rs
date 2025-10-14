@@ -7,6 +7,7 @@ use crate::{adapter_deb::DebReader, domain::AptRepositoryService};
 mod adapter_deb;
 mod adapter_github;
 mod adapter_http_server;
+mod adapter_pgp;
 mod adapter_storage;
 mod adapter_worker;
 mod domain;
@@ -55,6 +56,7 @@ pub struct Config {
     config: domain::Config,
     github: adapter_github::Config,
     http_server: adapter_http_server::Config,
+    pgp_cipher: adapter_pgp::Config,
     storage: adapter_storage::Config,
     worker: adapter_worker::Config,
 }
@@ -65,6 +67,7 @@ impl Config {
             config: domain::Config::from_env()?,
             github: adapter_github::Config::from_env()?,
             http_server: adapter_http_server::Config::from_env()?,
+            pgp_cipher: adapter_pgp::Config::from_env()?,
             storage: adapter_storage::Config::from_env()?,
             worker: adapter_worker::Config::from_env()?,
         })
@@ -79,6 +82,7 @@ impl Config {
             config: Arc::from(self.config),
             clock: PhantomData::<chrono::Utc>,
             deb_extractor: DebReader,
+            pgp_cipher: self.pgp_cipher.build()?,
         };
         Ok(Application {
             github,

@@ -1,8 +1,21 @@
-pub async fn handler() -> axum::http::StatusCode {
-    axum::http::StatusCode::NOT_IMPLEMENTED
+use axum::extract::State;
+
+use crate::adapter_http_server::{ServerState, handler::ApiError};
+
+#[tracing::instrument(skip_all, err(Debug))]
+pub async fn handler<AR>(State(state): State<ServerState<AR>>) -> Result<String, ApiError>
+where
+    AR: crate::domain::prelude::AptRepositoryReader + Clone,
+{
+    match state.apt_repository.signed_release_metadata().await {
+        Ok(Some(value)) => Ok(value),
+        Ok(None) => Err(ApiError::not_found("release not found")),
+        Err(err) => Err(ApiError::internal(err.to_string())),
+    }
 }
 
-// The `/dists/stable/InRelease` endpoint serves a **signed version of the Release file**. It is a single file that contains both the Release metadata and a GPG signature, allowing APT clients to verify the authenticity and integrity of the repository metadata in one request.
+// The `/dists/stable/InRelease` endpoint serves a **signed version of the Release file**. It is a single file that contains both the Release
+// metadata and a GPG signature, allowing APT clients to verify the authenticity and integrity of the repository metadata in one request.
 //
 // ## Purpose
 //
@@ -42,3 +55,51 @@ pub async fn handler() -> axum::http::StatusCode {
 //
 // - The signature is generated over the exact contents of the Release file (everything before the `-----BEGIN PGP SIGNATURE-----` line).
 // - The signature is typically created using a detached, clear-signed method (`gpg --clearsign`).
+
+#[cfg(test)]
+mod tests {
+    use crate::domain::entity::ReleaseMetadata;
+    use crate::domain::prelude::MockAptRepositoryService;
+
+    #[tokio::test]
+    async fn should_return_error_if_empty() {
+        let mut apt_repository = MockAptRepositoryService::new();
+        apt_repository
+            .expect_release_metadata()
+            .once()
+            .return_once(|| Box::pin(async move { Ok(None) }));
+        let state = crate::adapter_http_server::ServerState { apt_repository };
+        let err = super::handler(axum::extract::State(state))
+            .await
+            .unwrap_err();
+        assert_eq!(err.status_code, axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn should_return_payload() {
+        let mut apt_repository = MockAptRepositoryService::new();
+        apt_repository
+            .expect_release_metadata()
+            .once()
+            .return_once(|| {
+                let value = ReleaseMetadata {
+                    origin: "GitHub".into(),
+                    label: "Debian".into(),
+                    suite: "Stable".into(),
+                    version: "1.2.3".into(),
+                    codename: "Whatever".into(),
+                    date: chrono::DateTime::from_timestamp(1286705410, 0).unwrap(),
+                    architectures: Vec::default(),
+                    components: vec!["main".into()],
+                    description: "Mirror to GitHub".into(),
+                };
+                Box::pin(async move { Ok(Some(value)) })
+            });
+        let state = crate::adapter_http_server::ServerState { apt_repository };
+        let value = super::handler(axum::extract::State(state)).await.unwrap();
+        assert_eq!(
+            value,
+            "Origin: GitHub\nLabel: Debian\nSuite: Stable\nVersion: 1.2.3\nCodename: Whatever\nComponents: main\nDate: Sun, 10 Oct 2010 10:10:10 +0000\nDescription: Mirror to GitHub\n"
+        );
+    }
+}

@@ -17,3 +17,5 @@ TRACING_CONSOLE_COLOR=false
 # TRACING_MODE=otel
 # TRACING_OTEL_ENDPOINT=http://localhost:4317
 # TRACING_OTEL_INTERNAL_LEVEL=error
+
+PGP_PRIVATE_KEY_PATH=/var/lib/inapt/private-key.pem

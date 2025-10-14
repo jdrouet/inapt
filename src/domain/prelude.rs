@@ -6,14 +6,6 @@ pub trait AptRepositoryWriter: Send + Sync + 'static {
     fn synchronize(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum GetReleaseFileError {
-    #[error("release file not found")]
-    NotFound,
-    #[error(transparent)]
-    Internal(#[from] anyhow::Error),
-}
-
 /// Represents a logical APT repository (suite/component/arch).
 pub trait AptRepositoryReader: Send + Sync + 'static {
     /// List all available packages for a given architecture.
@@ -25,7 +17,12 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
     /// Get the Release metadata for the repository.
     fn release_metadata(
         &self,
-    ) -> impl Future<Output = Result<ReleaseMetadata, GetReleaseFileError>> + Send;
+    ) -> impl Future<Output = anyhow::Result<Option<ReleaseMetadata>>> + Send;
+
+    /// Get the signed Packages file content for a given architecture.
+    fn signed_release_metadata(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
 
     /// Get the Packages file content for a given architecture.
     fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send {
@@ -63,7 +60,10 @@ mockall::mock! {
         ) -> impl Future<Output = anyhow::Result<Vec<Package>>> + Send;
 
         /// Get the Release metadata for the repository.
-        fn release_metadata(&self) -> impl Future<Output = Result<ReleaseMetadata, GetReleaseFileError>> + Send;
+        fn release_metadata(&self) -> impl Future<Output = anyhow::Result<Option<ReleaseMetadata>>> + Send;
+
+        /// Get the signed Packages file content for a given architecture.
+        fn signed_release_metadata(&self) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
 
         /// Get the Packages file content for a given architecture.
         fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send;
@@ -178,5 +178,18 @@ mockall::mock! {
 
     impl Clock for Clock {
         fn now() -> chrono::DateTime<chrono::Utc>;
+    }
+}
+
+pub trait PGPCipher: Send + Sync + 'static {
+    fn sign(&self, data: &str) -> anyhow::Result<String>;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub PGPCipher {}
+
+    impl PGPCipher for PGPCipher {
+        fn sign(&self, data: &str) -> anyhow::Result<String>;
     }
 }
