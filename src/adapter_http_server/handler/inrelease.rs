@@ -58,14 +58,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::domain::entity::ReleaseMetadata;
     use crate::domain::prelude::MockAptRepositoryService;
 
     #[tokio::test]
     async fn should_return_error_if_empty() {
         let mut apt_repository = MockAptRepositoryService::new();
         apt_repository
-            .expect_release_metadata()
+            .expect_signed_release_metadata()
             .once()
             .return_once(|| Box::pin(async move { Ok(None) }));
         let state = crate::adapter_http_server::ServerState { apt_repository };
@@ -79,27 +78,20 @@ mod tests {
     async fn should_return_payload() {
         let mut apt_repository = MockAptRepositoryService::new();
         apt_repository
-            .expect_release_metadata()
+            .expect_signed_release_metadata()
             .once()
             .return_once(|| {
-                let value = ReleaseMetadata {
-                    origin: "GitHub".into(),
-                    label: "Debian".into(),
-                    suite: "Stable".into(),
-                    version: "1.2.3".into(),
-                    codename: "Whatever".into(),
-                    date: chrono::DateTime::from_timestamp(1286705410, 0).unwrap(),
-                    architectures: Vec::default(),
-                    components: vec!["main".into()],
-                    description: "Mirror to GitHub".into(),
-                };
-                Box::pin(async move { Ok(Some(value)) })
+                Box::pin(async move {
+                    Ok(Some(String::from(
+                        "foo -----BEGIN PGP SIGNATURE-----\n\n-----END PGP SIGNATURE-----\n",
+                    )))
+                })
             });
         let state = crate::adapter_http_server::ServerState { apt_repository };
         let value = super::handler(axum::extract::State(state)).await.unwrap();
         assert_eq!(
             value,
-            "Origin: GitHub\nLabel: Debian\nSuite: Stable\nVersion: 1.2.3\nCodename: Whatever\nComponents: main\nDate: Sun, 10 Oct 2010 10:10:10 +0000\nDescription: Mirror to GitHub\n"
+            "foo -----BEGIN PGP SIGNATURE-----\n\n-----END PGP SIGNATURE-----\n"
         );
     }
 }

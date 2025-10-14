@@ -90,8 +90,8 @@ where
         };
 
         let metadata = metadata.serialize().to_string();
-        let signed = self.pgp_cipher.sign(metadata.as_str())?;
-        Ok(Some(signed))
+        let signature = self.pgp_cipher.sign(metadata.as_str())?;
+        Ok(Some(format!("{metadata}\n\n{signature}\n")))
     }
 
     async fn package(&self, name: &str, filename: &str) -> anyhow::Result<Option<entity::Package>> {
