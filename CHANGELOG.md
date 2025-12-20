@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/jdrouet/inapt/compare/v0.1.8...v0.2.0) - 2025-12-20
+
+### Added
+
+- handle release.gpg endpoint ([#26](https://github.com/jdrouet/inapt/pull/26))
+- automatically generate gpg private key
+- create bin to generate keys
+- implement inrelease endpoint
+
+### Fixed
+
+- inrelease signature
+
+### Other
+
+- ignore RUSTSEC-2023-0071
+- *(deps)* Bump flate2 from 1.1.2 to 1.1.5 ([#19](https://github.com/jdrouet/inapt/pull/19))
+- *(deps)* Bump sequoia-openpgp from 2.0.0 to 2.1.0 ([#20](https://github.com/jdrouet/inapt/pull/20))
+- *(deps)* Bump axum from 0.8.6 to 0.8.7 ([#21](https://github.com/jdrouet/inapt/pull/21))
+- *(deps)* Bump mockall from 0.13.1 to 0.14.0 ([#22](https://github.com/jdrouet/inapt/pull/22))
+- *(deps)* Bump http from 1.3.1 to 1.4.0 ([#23](https://github.com/jdrouet/inapt/pull/23))
+- *(deps)* Bump actions/checkout from 5 to 6 ([#24](https://github.com/jdrouet/inapt/pull/24))
+- *(deps)* Bump actions/cache from 4 to 5 ([#25](https://github.com/jdrouet/inapt/pull/25))
+- *(deps)* Bump reqwest from 0.12.23 to 0.12.24 ([#16](https://github.com/jdrouet/inapt/pull/16))
+- *(deps)* Bump tokio from 1.47.1 to 1.48.0 ([#17](https://github.com/jdrouet/inapt/pull/17))
+- move configuration to toml file
+
 ## [0.1.8](https://github.com/jdrouet/inapt/compare/v0.1.7...v0.1.8) - 2025-10-05
 
 ### Fixed
