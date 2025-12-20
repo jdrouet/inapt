@@ -176,7 +176,6 @@ pub struct ArchitectureMetadata {
 
 /// Represents a .deb asset (source, filename, URL, etc.).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[allow(unused, reason = "TBD")]
 pub struct DebAsset {
     pub repo_owner: String,
     pub repo_name: String,

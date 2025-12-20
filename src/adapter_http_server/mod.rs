@@ -88,6 +88,5 @@ struct ServerState<AR>
 where
     AR: Clone + crate::domain::prelude::AptRepositoryReader,
 {
-    #[allow(unused, reason = "early")]
     apt_repository: AR,
 }
