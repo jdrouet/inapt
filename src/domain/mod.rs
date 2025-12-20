@@ -108,6 +108,16 @@ where
         Ok(Some(format!("{metadata}\n\n{signature}\n")))
     }
 
+    async fn release_gpg_signature(&self) -> anyhow::Result<Option<String>> {
+        let Some(metadata) = self.release_metadata().await? else {
+            return Ok(None);
+        };
+
+        let metadata = metadata.serialize().to_string();
+        let signature = self.pgp_cipher.sign(metadata.as_str())?;
+        Ok(Some(signature))
+    }
+
     async fn package(&self, name: &str, filename: &str) -> anyhow::Result<Option<entity::Package>> {
         let Some(received) = self.release_storage.find_latest_release().await else {
             return Ok(None);
@@ -750,6 +760,89 @@ SHA256:
             pgp_cipher: MockPGPCipher::new(),
         };
         let result = crate::domain::prelude::AptRepositoryReader::release_metadata(&service).await;
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[tokio::test]
+    async fn should_do_release_gpg_signature_successfully() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        let release_meta = crate::domain::entity::ReleaseMetadata {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            date: chrono::Utc::now(),
+            architectures: vec![],
+            components: vec!["main".to_string()],
+            description: "Test repo".into(),
+        };
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(move || {
+                let release_meta = release_meta.clone();
+                Box::pin(async move { Some(release_meta) })
+            });
+
+        let mut mock_pgp_cipher = MockPGPCipher::new();
+        mock_pgp_cipher
+            .expect_sign()
+            .returning(|_| Ok("SIGNATURE".to_string()));
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: mock_pgp_cipher,
+        };
+        let result =
+            crate::domain::prelude::AptRepositoryReader::release_gpg_signature(&service).await;
+        assert!(result.is_ok());
+        let signature = result.unwrap().unwrap();
+        assert_eq!(signature, "SIGNATURE");
+    }
+
+    #[tokio::test]
+    async fn should_do_release_gpg_signature_not_found() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(|| Box::pin(async { None }));
+
+        let mock_pgp_cipher = MockPGPCipher::new();
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: mock_pgp_cipher,
+        };
+        let result =
+            crate::domain::prelude::AptRepositoryReader::release_gpg_signature(&service).await;
         assert!(matches!(result, Ok(None)));
     }
 }
