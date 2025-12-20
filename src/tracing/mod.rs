@@ -104,7 +104,7 @@ impl OtelConfig {
         [
             KeyValue::new(semver::SERVICE_NAME, env!("CARGO_PKG_NAME")),
             KeyValue::new(semver::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            KeyValue::new("env", self.environment.to_string()),
+            KeyValue::new("deployment.environment", self.environment.to_string()),
         ]
     }
 
