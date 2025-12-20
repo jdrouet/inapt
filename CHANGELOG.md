@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/jdrouet/inapt/compare/v0.1.8...v0.2.0) - 2025-12-20
+
+### Added
+
+- handle release.gpg endpoint ([#26](https://github.com/jdrouet/inapt/pull/26))
+- automatically generate gpg private key
+- create bin to generate keys
+- implement inrelease endpoint
+
+### Fixed
+
+- inrelease signature
+
+### Other
+
+- *(deps)* Bump reqwest from 0.12.23 to 0.12.24 ([#16](https://github.com/jdrouet/inapt/pull/16))
+- *(deps)* Bump tokio from 1.47.1 to 1.48.0 ([#17](https://github.com/jdrouet/inapt/pull/17))
+- move configuration to toml file
+
 ## [0.1.8](https://github.com/jdrouet/inapt/compare/v0.1.7...v0.1.8) - 2025-10-05
 
 ### Fixed
