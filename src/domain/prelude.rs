@@ -24,6 +24,9 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
         &self,
     ) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
 
+    /// Get the signature of the Release file.
+    fn release_gpg_signature(&self) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
+
     /// Get the Packages file content for a given architecture.
     fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send {
         async {
@@ -64,6 +67,9 @@ mockall::mock! {
 
         /// Get the signed Packages file content for a given architecture.
         fn signed_release_metadata(&self) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
+
+        /// Get the signature of the Release file.
+        fn release_gpg_signature(&self) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
 
         /// Get the Packages file content for a given architecture.
         fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send;

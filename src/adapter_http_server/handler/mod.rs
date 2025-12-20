@@ -9,6 +9,7 @@ mod inrelease;
 mod packages;
 mod pool_redirect;
 mod release;
+mod release_gpg;
 
 pub fn build<AR>() -> axum::Router<ServerState<AR>>
 where
@@ -17,6 +18,7 @@ where
     axum::Router::new()
         .route("/dists/stable/Release", get(release::handler))
         .route("/dists/stable/InRelease", get(inrelease::handler))
+        .route("/dists/stable/Release.gpg", get(release_gpg::handler))
         .route(
             "/dists/stable/main/binary-{arch}/Packages",
             get(packages::handler),
