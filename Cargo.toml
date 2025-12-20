@@ -57,7 +57,7 @@ xz2 = "0.1"      # for .xz
 zstd = "0.13"    # for .zst
 
 [dev-dependencies]
-mockall = "0.13"
+mockall = "0.14"
 similar-asserts = "1.7"
 
 [package.metadata.cargo-machete]
