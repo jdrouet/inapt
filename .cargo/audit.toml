@@ -3,4 +3,7 @@ ignore = [
     # instant is unmaintained, but it's used by reqwest-retry -> wasm-timer -> parking_log -> instant
     # meaning that it's only when compiled in wasm, which is not the case for inapt
     "RUSTSEC-2024-0384",
+    # rsa has a known vulnerability but no fixed upgrade yet.
+    # Ignoring until there is a fix.
+    "RUSTSEC-2023-0071"
 ]
