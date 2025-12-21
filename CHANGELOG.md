@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/jdrouet/inapt/compare/v0.2.0...v0.2.1) - 2025-12-20
+
+### Fixed
+
+- use deployment.environment for environment key
+
+### Other
+
+- remove allow unused
+
 ## [0.2.0](https://github.com/jdrouet/inapt/compare/v0.1.8...v0.2.0) - 2025-12-20
 
 ### Added
