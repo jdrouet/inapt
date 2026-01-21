@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -10,6 +11,63 @@ use crate::domain::entity::{
     ArchitectureMetadata, DebAsset, FileMetadata, Package, PackageControl, PackageMetadata,
     ReleaseMetadata,
 };
+
+// SQL query constants
+const SQL_SELECT_LATEST_RELEASE_METADATA: &str = r#"
+    SELECT id, origin, label, suite, version, codename, date, components, description
+    FROM release_metadata
+    ORDER BY created_at DESC
+    LIMIT 1
+"#;
+
+const SQL_SELECT_ARCHITECTURE_METADATA: &str = r#"
+    SELECT name, plain_md5, plain_sha256, plain_size,
+           compressed_md5, compressed_sha256, compressed_size
+    FROM architecture_metadata
+    WHERE release_metadata_id = ?
+"#;
+
+const SQL_SELECT_PACKAGES_BY_ARCHITECTURES: &str = r#"
+    SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+           pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
+           pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
+    FROM deb_assets
+    WHERE pkg_architecture IN (
+"#;
+
+const SQL_INSERT_RELEASE_METADATA: &str = r#"
+    INSERT INTO release_metadata (origin, label, suite, version, codename, date, components, description, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+"#;
+
+const SQL_INSERT_ARCHITECTURE_METADATA: &str = "INSERT INTO architecture_metadata (release_metadata_id, name, plain_md5, plain_sha256, plain_size, compressed_md5, compressed_sha256, compressed_size) ";
+
+const SQL_SELECT_GITHUB_RELEASE: &str =
+    "SELECT id FROM github_releases WHERE repo_owner = ? AND repo_name = ? AND id = ?";
+
+const SQL_INSERT_GITHUB_RELEASE: &str = "INSERT OR IGNORE INTO github_releases (id, repo_owner, repo_name, scanned_at) VALUES (?, ?, ?, ?)";
+
+const SQL_INSERT_DEB_ASSET: &str = r#"
+    INSERT OR REPLACE INTO deb_assets (
+        id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+        pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
+        pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"#;
+
+const SQL_SELECT_DEB_ASSET_BY_ID: &str = r#"
+    SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+           pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
+           pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
+    FROM deb_assets WHERE id = ?
+"#;
+
+const SQL_SELECT_ALL_DEB_ASSETS: &str = r#"
+    SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+           pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
+           pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
+    FROM deb_assets
+"#;
 
 // Wrapper type for implementing FromRow on external types
 struct SqliteWrapper<T>(T);
@@ -179,80 +237,110 @@ impl SqliteStorage {
         *cache = None;
     }
 
+    /// Fetch the latest release metadata row from the database
+    #[tracing::instrument(
+        skip(pool),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_LATEST_RELEASE_METADATA,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
+    async fn fetch_latest_release_metadata_row(
+        pool: &SqlitePool,
+    ) -> anyhow::Result<Option<ReleaseMetadataRow>> {
+        let result = sqlx::query_as::<_, SqliteWrapper<ReleaseMetadataRow>>(
+            SQL_SELECT_LATEST_RELEASE_METADATA,
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(result.map(|w| w.into_inner()))
+    }
+
+    /// Fetch architecture metadata rows for a given release
+    #[tracing::instrument(
+        skip(pool),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_ARCHITECTURE_METADATA,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
+    async fn fetch_architecture_metadata_rows(
+        pool: &SqlitePool,
+        release_metadata_id: i64,
+    ) -> anyhow::Result<Vec<ArchitectureMetadataRow>> {
+        let rows: Vec<SqliteWrapper<ArchitectureMetadataRow>> =
+            sqlx::query_as(SQL_SELECT_ARCHITECTURE_METADATA)
+                .bind(release_metadata_id)
+                .fetch_all(pool)
+                .await?;
+
+        Ok(rows.into_iter().map(|w| w.into_inner()).collect())
+    }
+
+    /// Fetch packages for the given architectures
+    #[tracing::instrument(
+        skip(pool, arch_names),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_PACKAGES_BY_ARCHITECTURES,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
+    async fn fetch_packages_by_architectures(
+        pool: &SqlitePool,
+        arch_names: &[&str],
+    ) -> anyhow::Result<HashMap<String, Vec<Package>>> {
+        if arch_names.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_SELECT_PACKAGES_BY_ARCHITECTURES);
+
+        let mut separated = query_builder.separated(", ");
+        for name in arch_names {
+            separated.push_bind(*name);
+        }
+        separated.push_unseparated(")");
+
+        let all_packages: Vec<SqliteWrapper<Package>> =
+            query_builder.build_query_as().fetch_all(pool).await?;
+
+        let mut map: HashMap<String, Vec<Package>> = HashMap::new();
+        for pkg in all_packages {
+            let pkg = pkg.into_inner();
+            map.entry(pkg.metadata.control.architecture.clone())
+                .or_default()
+                .push(pkg);
+        }
+        Ok(map)
+    }
+
     /// Load the latest release metadata from the database
     async fn load_latest_release_from_db(
         pool: &SqlitePool,
     ) -> anyhow::Result<Option<ReleaseMetadata>> {
-        use std::collections::HashMap;
-
         // Get the latest release_metadata row
-        let Some(release_row) = sqlx::query_as::<_, SqliteWrapper<ReleaseMetadataRow>>(
-            r#"
-            SELECT id, origin, label, suite, version, codename, date, components, description
-            FROM release_metadata
-            ORDER BY created_at DESC
-            LIMIT 1
-            "#,
-        )
-        .fetch_optional(pool)
-        .await?
-        else {
+        let Some(release_row) = Self::fetch_latest_release_metadata_row(pool).await? else {
             return Ok(None);
         };
 
-        let release_row = release_row.into_inner();
-
         // Get architecture metadata for this release
-        let arch_rows: Vec<SqliteWrapper<ArchitectureMetadataRow>> = sqlx::query_as(
-            r#"
-            SELECT name, plain_md5, plain_sha256, plain_size,
-                   compressed_md5, compressed_sha256, compressed_size
-            FROM architecture_metadata
-            WHERE release_metadata_id = ?
-            "#,
-        )
-        .bind(release_row.id)
-        .fetch_all(pool)
-        .await?;
+        let arch_rows = Self::fetch_architecture_metadata_rows(pool, release_row.id).await?;
 
         // Load all packages for all architectures in a single query
-        let arch_names: Vec<&str> = arch_rows.iter().map(|r| r.0.name.as_str()).collect();
-
-        let packages_by_arch: HashMap<String, Vec<Package>> = if arch_names.is_empty() {
-            HashMap::new()
-        } else {
-            let mut query_builder = sqlx::QueryBuilder::new(
-                r#"SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
-                       pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
-                       pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
-                FROM deb_assets
-                WHERE pkg_architecture IN ("#,
-            );
-
-            let mut separated = query_builder.separated(", ");
-            for name in &arch_names {
-                separated.push_bind(*name);
-            }
-            separated.push_unseparated(")");
-
-            let all_packages: Vec<SqliteWrapper<Package>> =
-                query_builder.build_query_as().fetch_all(pool).await?;
-
-            let mut map: HashMap<String, Vec<Package>> = HashMap::new();
-            for pkg in all_packages {
-                let pkg = pkg.into_inner();
-                map.entry(pkg.metadata.control.architecture.clone())
-                    .or_default()
-                    .push(pkg);
-            }
-            map
-        };
+        let arch_names: Vec<&str> = arch_rows.iter().map(|r| r.name.as_str()).collect();
+        let packages_by_arch = Self::fetch_packages_by_architectures(pool, &arch_names).await?;
 
         // Build architectures with their packages
         let architectures: Vec<ArchitectureMetadata> = arch_rows
             .into_iter()
-            .map(|r| {
-                let row = r.into_inner();
+            .map(|row| {
                 let packages = packages_by_arch.get(&row.name).cloned().unwrap_or_default();
                 row.into_metadata(packages)
             })
@@ -275,75 +363,126 @@ impl SqliteStorage {
         }))
     }
 
+    /// Insert release metadata row into the database
+    #[tracing::instrument(
+        skip(pool, entry, now),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_INSERT_RELEASE_METADATA,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
+    async fn insert_release_metadata_row(
+        pool: &SqlitePool,
+        entry: &ReleaseMetadata,
+        now: &str,
+    ) -> anyhow::Result<i64> {
+        let components_json = serde_json::to_string(&entry.components)?;
+
+        let result = sqlx::query(SQL_INSERT_RELEASE_METADATA)
+            .bind(entry.origin.as_ref())
+            .bind(entry.label.as_ref())
+            .bind(entry.suite.as_ref())
+            .bind(entry.version.as_ref())
+            .bind(entry.codename.as_ref())
+            .bind(entry.date.to_rfc3339())
+            .bind(&components_json)
+            .bind(entry.description.as_ref())
+            .bind(now)
+            .execute(pool)
+            .await?;
+
+        Ok(result.last_insert_rowid())
+    }
+
+    /// Insert architecture metadata rows into the database
+    #[tracing::instrument(
+        skip(pool, architectures),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_INSERT_ARCHITECTURE_METADATA,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
+    async fn insert_architecture_metadata_rows(
+        pool: &SqlitePool,
+        release_metadata_id: i64,
+        architectures: &[ArchitectureMetadata],
+    ) -> anyhow::Result<()> {
+        if architectures.is_empty() {
+            return Ok(());
+        }
+
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_INSERT_ARCHITECTURE_METADATA);
+
+        query_builder.push_values(architectures, |mut b, arch| {
+            b.push_bind(release_metadata_id)
+                .push_bind(&arch.name)
+                .push_bind(&arch.plain_md5)
+                .push_bind(&arch.plain_sha256)
+                .push_bind(arch.plain_size as i64)
+                .push_bind(&arch.compressed_md5)
+                .push_bind(&arch.compressed_sha256)
+                .push_bind(arch.compressed_size as i64);
+        });
+
+        query_builder.build().execute(pool).await?;
+
+        Ok(())
+    }
+
     /// Save release metadata to the database
     async fn save_release_to_db(&self, entry: &ReleaseMetadata) -> anyhow::Result<i64> {
         let now = Utc::now().to_rfc3339();
-        let components_json = serde_json::to_string(&entry.components)?;
 
         // Insert release_metadata
-        let result = sqlx::query(
-            r#"
-            INSERT INTO release_metadata (origin, label, suite, version, codename, date, components, description, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(entry.origin.as_ref())
-        .bind(entry.label.as_ref())
-        .bind(entry.suite.as_ref())
-        .bind(entry.version.as_ref())
-        .bind(entry.codename.as_ref())
-        .bind(entry.date.to_rfc3339())
-        .bind(&components_json)
-        .bind(entry.description.as_ref())
-        .bind(&now)
-        .execute(&self.pool)
-        .await?;
-
-        let release_id = result.last_insert_rowid();
+        let release_id = Self::insert_release_metadata_row(&self.pool, entry, &now).await?;
 
         // Batch insert architecture_metadata
-        if !entry.architectures.is_empty() {
-            let mut query_builder = sqlx::QueryBuilder::new(
-                "INSERT INTO architecture_metadata (release_metadata_id, name, plain_md5, plain_sha256, plain_size, compressed_md5, compressed_sha256, compressed_size) ",
-            );
-
-            query_builder.push_values(&entry.architectures, |mut b, arch| {
-                b.push_bind(release_id)
-                    .push_bind(&arch.name)
-                    .push_bind(&arch.plain_md5)
-                    .push_bind(&arch.plain_sha256)
-                    .push_bind(arch.plain_size as i64)
-                    .push_bind(&arch.compressed_md5)
-                    .push_bind(&arch.compressed_sha256)
-                    .push_bind(arch.compressed_size as i64);
-            });
-
-            query_builder.build().execute(&self.pool).await?;
-        }
+        Self::insert_architecture_metadata_rows(&self.pool, release_id, &entry.architectures)
+            .await?;
 
         Ok(release_id)
     }
 }
 
 impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_GITHUB_RELEASE,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
     async fn is_release_scanned(
         &self,
         repo_owner: &str,
         repo_name: &str,
         release_id: u64,
     ) -> anyhow::Result<bool> {
-        let result: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM github_releases WHERE repo_owner = ? AND repo_name = ? AND id = ?",
-        )
-        .bind(repo_owner)
-        .bind(repo_name)
-        .bind(release_id as i64)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(i64,)> = sqlx::query_as(SQL_SELECT_GITHUB_RELEASE)
+            .bind(repo_owner)
+            .bind(repo_name)
+            .bind(release_id as i64)
+            .fetch_optional(&self.pool)
+            .await?;
 
         Ok(result.is_some())
     }
 
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_INSERT_GITHUB_RELEASE,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
     async fn mark_release_scanned(
         &self,
         repo_owner: &str,
@@ -352,71 +491,73 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
     ) -> anyhow::Result<()> {
         let now = Utc::now().to_rfc3339();
 
-        sqlx::query(
-            "INSERT OR IGNORE INTO github_releases (id, repo_owner, repo_name, scanned_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind(release_id as i64)
-        .bind(repo_owner)
-        .bind(repo_name)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query(SQL_INSERT_GITHUB_RELEASE)
+            .bind(release_id as i64)
+            .bind(repo_owner)
+            .bind(repo_name)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
 }
 
 impl crate::domain::prelude::PackageStore for SqliteStorage {
+    #[tracing::instrument(
+        skip(self, package),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_INSERT_DEB_ASSET,
+            span.type = "sql",
+            otel.kind = "client",
+            asset_id = package.asset.asset_id
+        )
+    )]
     async fn insert_package(&self, package: &Package) -> anyhow::Result<()> {
         let description_json = serde_json::to_string(&package.metadata.control.description)?;
         let others_json = serde_json::to_string(&package.metadata.control.others)?;
 
-        sqlx::query(
-            r#"
-            INSERT OR REPLACE INTO deb_assets (
-                id, release_id, repo_owner, repo_name, filename, url, size, sha256,
-                pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
-                pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(package.asset.asset_id as i64)
-        .bind(package.asset.release_id as i64)
-        .bind(&package.asset.repo_owner)
-        .bind(&package.asset.repo_name)
-        .bind(&package.asset.filename)
-        .bind(&package.asset.url)
-        .bind(package.asset.size as i64)
-        .bind(&package.asset.sha256)
-        .bind(&package.metadata.control.package)
-        .bind(&package.metadata.control.version)
-        .bind(&package.metadata.control.section)
-        .bind(&package.metadata.control.priority)
-        .bind(&package.metadata.control.architecture)
-        .bind(&package.metadata.control.maintainer)
-        .bind(&description_json)
-        .bind(&others_json)
-        .bind(package.metadata.file.size as i64)
-        .bind(&package.metadata.file.sha256)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query(SQL_INSERT_DEB_ASSET)
+            .bind(package.asset.asset_id as i64)
+            .bind(package.asset.release_id as i64)
+            .bind(&package.asset.repo_owner)
+            .bind(&package.asset.repo_name)
+            .bind(&package.asset.filename)
+            .bind(&package.asset.url)
+            .bind(package.asset.size as i64)
+            .bind(&package.asset.sha256)
+            .bind(&package.metadata.control.package)
+            .bind(&package.metadata.control.version)
+            .bind(&package.metadata.control.section)
+            .bind(&package.metadata.control.priority)
+            .bind(&package.metadata.control.architecture)
+            .bind(&package.metadata.control.maintainer)
+            .bind(&description_json)
+            .bind(&others_json)
+            .bind(package.metadata.file.size as i64)
+            .bind(&package.metadata.file.sha256)
+            .execute(&self.pool)
+            .await?;
 
         self.invalidate_cache().await;
         Ok(())
     }
 
-    async fn find_package_by_asset_id(&self, asset_id: u64) -> Option<Package> {
-        match sqlx::query_as::<_, SqliteWrapper<Package>>(
-            r#"
-            SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
-                   pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
-                   pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
-            FROM deb_assets WHERE id = ?
-            "#,
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_DEB_ASSET_BY_ID,
+            span.type = "sql",
+            otel.kind = "client"
         )
-        .bind(asset_id as i64)
-        .fetch_optional(&self.pool)
-        .await
+    )]
+    async fn find_package_by_asset_id(&self, asset_id: u64) -> Option<Package> {
+        match sqlx::query_as::<_, SqliteWrapper<Package>>(SQL_SELECT_DEB_ASSET_BY_ID)
+            .bind(asset_id as i64)
+            .fetch_optional(&self.pool)
+            .await
         {
             Ok(Some(wrapper)) => Some(wrapper.into_inner()),
             Ok(None) => None,
@@ -427,17 +568,19 @@ impl crate::domain::prelude::PackageStore for SqliteStorage {
         }
     }
 
-    async fn list_all_packages(&self) -> anyhow::Result<Vec<Package>> {
-        let rows: Vec<SqliteWrapper<Package>> = sqlx::query_as(
-            r#"
-            SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
-                   pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
-                   pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
-            FROM deb_assets
-            "#,
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_ALL_DEB_ASSETS,
+            span.type = "sql",
+            otel.kind = "client"
         )
-        .fetch_all(&self.pool)
-        .await?;
+    )]
+    async fn list_all_packages(&self) -> anyhow::Result<Vec<Package>> {
+        let rows: Vec<SqliteWrapper<Package>> = sqlx::query_as(SQL_SELECT_ALL_DEB_ASSETS)
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(rows.into_iter().map(|w| w.into_inner()).collect())
     }
