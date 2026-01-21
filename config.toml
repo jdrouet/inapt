@@ -15,7 +15,7 @@ port = 3000
 private_key_path = "resources/private-key.pem"
 # passphrase = "..."
 
-[storage]
+[sqlite]
 path = "target/inapt.db"
 
 [worker]

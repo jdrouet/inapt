@@ -207,16 +207,16 @@ where
                 "processing new release"
             );
 
+            // Mark release as scanned first (required for foreign key constraint on packages)
+            self.release_tracker
+                .mark_release_scanned(&release.repo_owner, &release.repo_name, release.release_id)
+                .await?;
+
             for asset in release.assets {
                 if let Some(package) = self.handle_package(asset).await? {
                     self.package_store.insert_package(&package).await?;
                 }
             }
-
-            // Mark release as scanned
-            self.release_tracker
-                .mark_release_scanned(&release.repo_owner, &release.repo_name, release.release_id)
-                .await?;
         }
 
         Ok(())
