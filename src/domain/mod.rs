@@ -457,6 +457,7 @@ Version: 0.1.0
 Codename: testcode
 Components: main
 Date: Wed, 2 Feb 2000 01:02:02 +0000
+Acquire-By-Hash: yes
 Description: Test repo
 
 MD5Sum:
