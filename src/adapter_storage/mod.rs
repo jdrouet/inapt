@@ -3,7 +3,7 @@ use std::{io::Write, sync::Arc};
 use anyhow::Context;
 use tokio::sync::RwLock;
 
-use crate::domain::entity::{DebAsset, Package, ReleaseMetadata};
+use crate::domain::entity::{Package, ReleaseMetadata};
 
 const fn default_true() -> bool {
     true
@@ -90,18 +90,6 @@ impl crate::domain::prelude::ReleaseStore for MemoryStorage {
             tracing::error!(error = ?err, "unable to persist on disk");
             eprintln!("unable to persist on disk: {err:?}");
         }
-    }
-
-    async fn find_package_by_asset(&self, asset: &DebAsset) -> Option<Package> {
-        self.0
-            .read()
-            .await
-            .value
-            .iter()
-            .flat_map(|meta| meta.architectures.iter())
-            .flat_map(|arch| arch.packages.iter())
-            .find(|pkg| pkg.asset.asset_id == asset.asset_id)
-            .cloned()
     }
 
     async fn find_latest_release(&self) -> Option<ReleaseMetadata> {

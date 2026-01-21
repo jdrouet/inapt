@@ -618,7 +618,7 @@ SHA256:
             .expect_stream_releases_with_assets()
             .returning(|_repo| Box::pin(async { Err(anyhow::anyhow!("fail")) }));
 
-        let mut mock_release_store = MockReleaseStore::new();
+        let mock_release_store = MockReleaseStore::new();
 
         let mut mock_package_store = MockPackageStore::new();
         mock_package_store
@@ -1084,7 +1084,7 @@ SHA256:
             .expect_stream_releases_with_assets()
             .returning(|_repo| Box::pin(async { Ok(vec![]) }));
 
-        let mut mock_release_tracker = MockReleaseTracker::new();
+        let mock_release_tracker = MockReleaseTracker::new();
         // No expectations needed - no releases to process
 
         let mut mock_package_store = MockPackageStore::new();

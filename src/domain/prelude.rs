@@ -110,12 +110,6 @@ mockall::mock! {
 
 /// Abstracts the source of .deb packages (e.g., GitHub Releases).
 pub trait PackageSource: Send + Sync + 'static {
-    /// List all .deb assets for a repo.
-    fn list_deb_assets(
-        &self,
-        repo: &str,
-    ) -> impl Future<Output = anyhow::Result<Vec<DebAsset>>> + Send;
-
     /// Download a .deb asset.
     fn fetch_deb(
         &self,
@@ -138,10 +132,6 @@ mockall::mock! {
     }
 
     impl PackageSource for PackageSource {
-        fn list_deb_assets(
-            &self,
-            repo: &str,
-        ) -> impl Future<Output = anyhow::Result<Vec<DebAsset>>> + Send;
         fn fetch_deb(
             &self,
             asset: &DebAsset,
@@ -156,10 +146,6 @@ mockall::mock! {
 /// Caches package metadata and assets.
 pub trait ReleaseStore: Send + Sync + 'static {
     fn insert_release(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
-    fn find_package_by_asset(
-        &self,
-        asset: &DebAsset,
-    ) -> impl Future<Output = Option<Package>> + Send;
     fn find_latest_release(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
 }
 
@@ -173,7 +159,6 @@ mockall::mock! {
 
     impl ReleaseStore for ReleaseStore {
         fn insert_release(&self, entry: ReleaseMetadata) -> impl Future<Output = ()> + Send;
-        fn find_package_by_asset(&self, asset: &DebAsset) -> impl Future<Output = Option<Package>> + Send;
         fn find_latest_release(&self) -> impl Future<Output = Option<ReleaseMetadata>> + Send;
     }
 }

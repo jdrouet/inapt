@@ -27,37 +27,6 @@ impl crate::domain::prelude::PackageSource for super::Client {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    async fn list_deb_assets(
-        &self,
-        repo: &str,
-    ) -> anyhow::Result<Vec<crate::domain::entity::DebAsset>> {
-        let Some((repo_owner, repo_name)) = repo.split_once('/') else {
-            anyhow::bail!("unable to get owner and repo name")
-        };
-
-        let mut result = Vec::new();
-        let repo = Repository::new(repo_owner, repo_name);
-        let mut release_stream = self.stream_releases(repo);
-        while let Ok(Some(release)) = release_stream.next().await {
-            for asset in release.assets {
-                if asset.browser_download_url.ends_with(".deb") {
-                    result.push(crate::domain::entity::DebAsset {
-                        repo_owner: repo_owner.to_string(),
-                        repo_name: repo_name.to_string(),
-                        release_id: release.id,
-                        asset_id: asset.id,
-                        filename: asset.name,
-                        size: asset.size,
-                        url: asset.browser_download_url,
-                        sha256: None,
-                    });
-                }
-            }
-        }
-        Ok(result)
-    }
-
-    #[tracing::instrument(skip(self), err(Debug))]
     async fn stream_releases_with_assets(
         &self,
         repo: &str,
