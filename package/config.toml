@@ -16,7 +16,7 @@ private_key_path = "/etc/inapt/private-key.pem"
 # passphrase = "..."
 
 [storage]
-path = "/var/lib/inapt/storage.json"
+path = "/var/lib/inapt/inapt.db"
 
 [worker]
 interval = 43200 # 12h

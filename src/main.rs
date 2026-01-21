@@ -7,7 +7,7 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .unwrap_or("./config.toml".into());
     let config = inapt::Config::from_path(config_path)?;
-    let app = config.build()?;
+    let app = config.build().await?;
     let res = app.run().await;
 
     tracer.shutdown();

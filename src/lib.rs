@@ -8,7 +8,7 @@ mod adapter_deb;
 mod adapter_github;
 mod adapter_http_server;
 mod adapter_pgp;
-mod adapter_storage;
+mod adapter_sqlite;
 mod adapter_worker;
 mod domain;
 
@@ -21,7 +21,7 @@ pub struct Config {
     github: adapter_github::Config,
     http_server: adapter_http_server::Config,
     pgp_cipher: adapter_pgp::Config,
-    storage: adapter_storage::Config,
+    sqlite: adapter_sqlite::Config,
     worker: adapter_worker::Config,
 }
 
@@ -31,16 +31,18 @@ impl Config {
         Ok(toml::from_slice(&content)?)
     }
 
-    pub fn build(self) -> anyhow::Result<Application> {
-        let release_storage = self.storage.build()?;
+    pub async fn build(self) -> anyhow::Result<Application> {
+        let storage = self.sqlite.build().await?;
         let github = self.github.build()?;
         let apt_repository_service = AptRepositoryService {
             package_source: github.clone(),
-            release_storage,
+            release_storage: storage.clone(),
             config: Arc::from(self.config),
             clock: PhantomData::<chrono::Utc>,
             deb_extractor: DebReader,
             pgp_cipher: self.pgp_cipher.build()?,
+            release_tracker: storage.clone(),
+            package_store: storage,
         };
         Ok(Application {
             github,

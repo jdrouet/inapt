@@ -15,8 +15,8 @@ port = 3000
 private_key_path = "resources/private-key.pem"
 # passphrase = "..."
 
-[storage]
-path = "target/storage.json"
+[sqlite]
+path = "target/inapt.db"
 
 [worker]
 interval = 3600 # 1h
