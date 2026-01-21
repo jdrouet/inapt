@@ -45,6 +45,22 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
         name: &str,
         filename: &str,
     ) -> impl Future<Output = anyhow::Result<Option<Package>>> + Send;
+
+    /// Find architecture metadata by hash (SHA256) for by-hash support.
+    /// Returns the architecture name if the hash matches either plain or compressed Packages file.
+    fn find_architecture_by_hash(
+        &self,
+        hash: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<ArchitectureHashMatch>>> + Send;
+}
+
+/// Represents a match found when looking up an architecture by hash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchitectureHashMatch {
+    /// The architecture name (e.g., "amd64", "arm64")
+    pub architecture: String,
+    /// Whether the hash matched the compressed (.gz) variant
+    pub compressed: bool,
 }
 
 #[cfg(test)]
@@ -80,6 +96,12 @@ mockall::mock! {
             name: &str,
             filename: &str,
         ) -> impl Future<Output = anyhow::Result<Option<Package>>> + Send;
+
+        /// Find architecture metadata by hash (SHA256) for by-hash support.
+        fn find_architecture_by_hash(
+            &self,
+            hash: &str,
+        ) -> impl Future<Output = anyhow::Result<Option<ArchitectureHashMatch>>> + Send;
     }
 }
 

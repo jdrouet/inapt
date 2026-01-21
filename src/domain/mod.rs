@@ -134,6 +134,30 @@ where
             .find(|item| item.metadata.control.package == name && item.asset.filename == filename)
             .cloned())
     }
+
+    async fn find_architecture_by_hash(
+        &self,
+        hash: &str,
+    ) -> anyhow::Result<Option<prelude::ArchitectureHashMatch>> {
+        let Some(received) = self.release_storage.find_latest_release().await else {
+            return Ok(None);
+        };
+        for arch in &received.architectures {
+            if arch.plain_sha256 == hash {
+                return Ok(Some(prelude::ArchitectureHashMatch {
+                    architecture: arch.name.clone(),
+                    compressed: false,
+                }));
+            }
+            if arch.compressed_sha256 == hash {
+                return Ok(Some(prelude::ArchitectureHashMatch {
+                    architecture: arch.name.clone(),
+                    compressed: true,
+                }));
+            }
+        }
+        Ok(None)
+    }
 }
 
 impl<C, PS, RS, DE, PGP, RT, PKS> AptRepositoryService<C, PS, RS, DE, PGP, RT, PKS>
