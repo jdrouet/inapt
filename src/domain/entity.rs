@@ -186,3 +186,12 @@ pub struct DebAsset {
     pub size: u64,
     pub sha256: Option<String>,
 }
+
+/// A GitHub release with its .deb assets for incremental processing.
+#[derive(Debug, Clone)]
+pub struct ReleaseWithAssets {
+    pub release_id: u64,
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub assets: Vec<DebAsset>,
+}
