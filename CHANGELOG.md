@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/jdrouet/inapt/compare/v0.2.1...v0.3.0) - 2026-01-21
+
+### Added
+
+- add by-hash support for APT index retrieval ([#40](https://github.com/jdrouet/inapt/pull/40))
+- SQLite storage for incremental GitHub release synchronization ([#34](https://github.com/jdrouet/inapt/pull/34))
+
+### Fixed
+
+- builder on the ci
+
+### Other
+
+- add end-to-end tests for APT repository ([#41](https://github.com/jdrouet/inapt/pull/41))
+- *(deps)* Bump chrono from 0.4.42 to 0.4.43 ([#39](https://github.com/jdrouet/inapt/pull/39))
+- *(deps)* Bump thiserror from 2.0.17 to 2.0.18 ([#38](https://github.com/jdrouet/inapt/pull/38))
+- *(deps)* Bump flate2 from 1.1.5 to 1.1.8 ([#37](https://github.com/jdrouet/inapt/pull/37))
+- *(deps)* Bump reqwest-tracing from 0.5.8 to 0.6.0 ([#36](https://github.com/jdrouet/inapt/pull/36))
+- *(deps)* Bump tracing from 0.1.41 to 0.1.44 ([#31](https://github.com/jdrouet/inapt/pull/31))
+- *(deps)* Bump serde_json from 1.0.145 to 1.0.146 ([#32](https://github.com/jdrouet/inapt/pull/32))
+- *(deps)* Bump reqwest-retry from 0.7.0 to 0.8.0 ([#33](https://github.com/jdrouet/inapt/pull/33))
+
 ## [0.2.1](https://github.com/jdrouet/inapt/compare/v0.2.0...v0.2.1) - 2025-12-20
 
 ### Fixed
