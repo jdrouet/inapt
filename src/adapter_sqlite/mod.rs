@@ -1,13 +1,129 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use chrono::Utc;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Row, SqlitePool};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
+use sqlx::{FromRow, Row, SqlitePool};
 use tokio::sync::RwLock;
 
 use crate::domain::entity::{
-    DebAsset, FileMetadata, Package, PackageControl, PackageMetadata, ReleaseMetadata,
+    ArchitectureMetadata, DebAsset, FileMetadata, Package, PackageControl, PackageMetadata,
+    ReleaseMetadata,
 };
+
+// Wrapper type for implementing FromRow on external types
+struct SqliteWrapper<T>(T);
+
+impl<T> SqliteWrapper<T> {
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+/// Row data for release_metadata table
+struct ReleaseMetadataRow {
+    id: i64,
+    origin: String,
+    label: String,
+    suite: String,
+    version: String,
+    codename: String,
+    date: String,
+    components: String,
+    description: String,
+}
+
+impl<'r> FromRow<'r, SqliteRow> for SqliteWrapper<ReleaseMetadataRow> {
+    fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
+        Ok(SqliteWrapper(ReleaseMetadataRow {
+            id: row.try_get("id")?,
+            origin: row.try_get("origin")?,
+            label: row.try_get("label")?,
+            suite: row.try_get("suite")?,
+            version: row.try_get("version")?,
+            codename: row.try_get("codename")?,
+            date: row.try_get("date")?,
+            components: row.try_get("components")?,
+            description: row.try_get("description")?,
+        }))
+    }
+}
+
+/// Row data for architecture_metadata table (without packages)
+struct ArchitectureMetadataRow {
+    name: String,
+    plain_md5: String,
+    plain_sha256: String,
+    plain_size: i64,
+    compressed_md5: String,
+    compressed_sha256: String,
+    compressed_size: i64,
+}
+
+impl<'r> FromRow<'r, SqliteRow> for SqliteWrapper<ArchitectureMetadataRow> {
+    fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
+        Ok(SqliteWrapper(ArchitectureMetadataRow {
+            name: row.try_get("name")?,
+            plain_md5: row.try_get("plain_md5")?,
+            plain_sha256: row.try_get("plain_sha256")?,
+            plain_size: row.try_get("plain_size")?,
+            compressed_md5: row.try_get("compressed_md5")?,
+            compressed_sha256: row.try_get("compressed_sha256")?,
+            compressed_size: row.try_get("compressed_size")?,
+        }))
+    }
+}
+
+impl ArchitectureMetadataRow {
+    fn into_metadata(self, packages: Vec<Package>) -> ArchitectureMetadata {
+        ArchitectureMetadata {
+            name: self.name,
+            plain_md5: self.plain_md5,
+            plain_sha256: self.plain_sha256,
+            plain_size: self.plain_size as u64,
+            compressed_md5: self.compressed_md5,
+            compressed_sha256: self.compressed_sha256,
+            compressed_size: self.compressed_size as u64,
+            packages,
+        }
+    }
+}
+
+impl<'r> FromRow<'r, SqliteRow> for SqliteWrapper<Package> {
+    fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
+        let description: String = row.try_get("pkg_description")?;
+        let others: String = row.try_get("pkg_others")?;
+
+        Ok(SqliteWrapper(Package {
+            metadata: PackageMetadata {
+                control: PackageControl {
+                    package: row.try_get("pkg_name")?,
+                    version: row.try_get("pkg_version")?,
+                    section: row.try_get("pkg_section")?,
+                    priority: row.try_get("pkg_priority")?,
+                    architecture: row.try_get("pkg_architecture")?,
+                    maintainer: row.try_get("pkg_maintainer")?,
+                    description: serde_json::from_str(&description).unwrap_or_default(),
+                    others: serde_json::from_str(&others).unwrap_or_default(),
+                },
+                file: FileMetadata {
+                    size: row.try_get::<i64, _>("file_size")? as u64,
+                    sha256: row.try_get("file_sha256")?,
+                },
+            },
+            asset: DebAsset {
+                repo_owner: row.try_get("repo_owner")?,
+                repo_name: row.try_get("repo_name")?,
+                release_id: row.try_get::<i64, _>("release_id")? as u64,
+                asset_id: row.try_get::<i64, _>("id")? as u64,
+                filename: row.try_get("filename")?,
+                url: row.try_get("url")?,
+                size: row.try_get::<i64, _>("size")? as u64,
+                sha256: row.try_get("sha256")?,
+            },
+        }))
+    }
+}
 
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct Config {
@@ -48,9 +164,12 @@ impl SqliteStorage {
         // Run migrations
         sqlx::migrate!("./migrations").run(&pool).await?;
 
+        // Load cached release metadata from database
+        let cached_release = Self::load_latest_release_from_db(&pool).await?;
+
         Ok(Self {
             pool,
-            release_cache: Arc::new(RwLock::new(None)),
+            release_cache: Arc::new(RwLock::new(cached_release)),
         })
     }
 
@@ -58,6 +177,151 @@ impl SqliteStorage {
     async fn invalidate_cache(&self) {
         let mut cache = self.release_cache.write().await;
         *cache = None;
+    }
+
+    /// Load the latest release metadata from the database
+    async fn load_latest_release_from_db(
+        pool: &SqlitePool,
+    ) -> anyhow::Result<Option<ReleaseMetadata>> {
+        use std::collections::HashMap;
+
+        // Get the latest release_metadata row
+        let Some(release_row) = sqlx::query_as::<_, SqliteWrapper<ReleaseMetadataRow>>(
+            r#"
+            SELECT id, origin, label, suite, version, codename, date, components, description
+            FROM release_metadata
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .fetch_optional(pool)
+        .await?
+        else {
+            return Ok(None);
+        };
+
+        let release_row = release_row.into_inner();
+
+        // Get architecture metadata for this release
+        let arch_rows: Vec<SqliteWrapper<ArchitectureMetadataRow>> = sqlx::query_as(
+            r#"
+            SELECT name, plain_md5, plain_sha256, plain_size,
+                   compressed_md5, compressed_sha256, compressed_size
+            FROM architecture_metadata
+            WHERE release_metadata_id = ?
+            "#,
+        )
+        .bind(release_row.id)
+        .fetch_all(pool)
+        .await?;
+
+        // Load all packages for all architectures in a single query
+        let arch_names: Vec<&str> = arch_rows.iter().map(|r| r.0.name.as_str()).collect();
+
+        let packages_by_arch: HashMap<String, Vec<Package>> = if arch_names.is_empty() {
+            HashMap::new()
+        } else {
+            let mut query_builder = sqlx::QueryBuilder::new(
+                r#"SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+                       pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
+                       pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
+                FROM deb_assets
+                WHERE pkg_architecture IN ("#,
+            );
+
+            let mut separated = query_builder.separated(", ");
+            for name in &arch_names {
+                separated.push_bind(*name);
+            }
+            separated.push_unseparated(")");
+
+            let all_packages: Vec<SqliteWrapper<Package>> =
+                query_builder.build_query_as().fetch_all(pool).await?;
+
+            let mut map: HashMap<String, Vec<Package>> = HashMap::new();
+            for pkg in all_packages {
+                let pkg = pkg.into_inner();
+                map.entry(pkg.metadata.control.architecture.clone())
+                    .or_default()
+                    .push(pkg);
+            }
+            map
+        };
+
+        // Build architectures with their packages
+        let architectures: Vec<ArchitectureMetadata> = arch_rows
+            .into_iter()
+            .map(|r| {
+                let row = r.into_inner();
+                let packages = packages_by_arch.get(&row.name).cloned().unwrap_or_default();
+                row.into_metadata(packages)
+            })
+            .collect();
+
+        let date = chrono::DateTime::parse_from_rfc3339(&release_row.date)
+            .map_err(|e| anyhow::anyhow!("invalid date format in database: {e}"))?
+            .with_timezone(&Utc);
+
+        Ok(Some(ReleaseMetadata {
+            origin: Cow::Owned(release_row.origin),
+            label: Cow::Owned(release_row.label),
+            suite: Cow::Owned(release_row.suite),
+            version: Cow::Owned(release_row.version),
+            codename: Cow::Owned(release_row.codename),
+            date,
+            architectures,
+            components: serde_json::from_str(&release_row.components)?,
+            description: Cow::Owned(release_row.description),
+        }))
+    }
+
+    /// Save release metadata to the database
+    async fn save_release_to_db(&self, entry: &ReleaseMetadata) -> anyhow::Result<i64> {
+        let now = Utc::now().to_rfc3339();
+        let components_json = serde_json::to_string(&entry.components)?;
+
+        // Insert release_metadata
+        let result = sqlx::query(
+            r#"
+            INSERT INTO release_metadata (origin, label, suite, version, codename, date, components, description, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(entry.origin.as_ref())
+        .bind(entry.label.as_ref())
+        .bind(entry.suite.as_ref())
+        .bind(entry.version.as_ref())
+        .bind(entry.codename.as_ref())
+        .bind(entry.date.to_rfc3339())
+        .bind(&components_json)
+        .bind(entry.description.as_ref())
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+
+        let release_id = result.last_insert_rowid();
+
+        // Batch insert architecture_metadata
+        if !entry.architectures.is_empty() {
+            let mut query_builder = sqlx::QueryBuilder::new(
+                "INSERT INTO architecture_metadata (release_metadata_id, name, plain_md5, plain_sha256, plain_size, compressed_md5, compressed_sha256, compressed_size) ",
+            );
+
+            query_builder.push_values(&entry.architectures, |mut b, arch| {
+                b.push_bind(release_id)
+                    .push_bind(&arch.name)
+                    .push_bind(&arch.plain_md5)
+                    .push_bind(&arch.plain_sha256)
+                    .push_bind(arch.plain_size as i64)
+                    .push_bind(&arch.compressed_md5)
+                    .push_bind(&arch.compressed_sha256)
+                    .push_bind(arch.compressed_size as i64);
+            });
+
+            query_builder.build().execute(&self.pool).await?;
+        }
+
+        Ok(release_id)
     }
 }
 
@@ -142,7 +406,7 @@ impl crate::domain::prelude::PackageStore for SqliteStorage {
     }
 
     async fn find_package_by_asset_id(&self, asset_id: u64) -> Option<Package> {
-        let row = sqlx::query(
+        match sqlx::query_as::<_, SqliteWrapper<Package>>(
             r#"
             SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
                    pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
@@ -153,13 +417,18 @@ impl crate::domain::prelude::PackageStore for SqliteStorage {
         .bind(asset_id as i64)
         .fetch_optional(&self.pool)
         .await
-        .ok()??;
-
-        Some(row_to_package(&row))
+        {
+            Ok(Some(wrapper)) => Some(wrapper.into_inner()),
+            Ok(None) => None,
+            Err(err) => {
+                tracing::error!(error = ?err, asset_id, "failed to find package by asset_id");
+                None
+            }
+        }
     }
 
     async fn list_all_packages(&self) -> anyhow::Result<Vec<Package>> {
-        let rows = sqlx::query(
+        let rows: Vec<SqliteWrapper<Package>> = sqlx::query_as(
             r#"
             SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
                    pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
@@ -170,54 +439,24 @@ impl crate::domain::prelude::PackageStore for SqliteStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.iter().map(row_to_package).collect())
+        Ok(rows.into_iter().map(|w| w.into_inner()).collect())
     }
 }
 
 impl crate::domain::prelude::ReleaseStore for SqliteStorage {
     async fn insert_release(&self, entry: ReleaseMetadata) {
+        // Save to database
+        if let Err(err) = self.save_release_to_db(&entry).await {
+            tracing::error!(error = ?err, "failed to save release metadata to database");
+        }
+
+        // Update cache
         let mut cache = self.release_cache.write().await;
         *cache = Some(entry);
     }
 
     async fn find_latest_release(&self) -> Option<ReleaseMetadata> {
         self.release_cache.read().await.clone()
-    }
-}
-
-fn row_to_package(row: &sqlx::sqlite::SqliteRow) -> Package {
-    let description: String = row.get("pkg_description");
-    let others: String = row.get("pkg_others");
-    let section: Option<String> = row.get("pkg_section");
-    let sha256: Option<String> = row.get("sha256");
-
-    Package {
-        metadata: PackageMetadata {
-            control: PackageControl {
-                package: row.get("pkg_name"),
-                version: row.get("pkg_version"),
-                section,
-                priority: row.get("pkg_priority"),
-                architecture: row.get("pkg_architecture"),
-                maintainer: row.get("pkg_maintainer"),
-                description: serde_json::from_str(&description).unwrap_or_default(),
-                others: serde_json::from_str(&others).unwrap_or_default(),
-            },
-            file: FileMetadata {
-                size: row.get::<i64, _>("file_size") as u64,
-                sha256: row.get("file_sha256"),
-            },
-        },
-        asset: DebAsset {
-            repo_owner: row.get("repo_owner"),
-            repo_name: row.get("repo_name"),
-            release_id: row.get::<i64, _>("release_id") as u64,
-            asset_id: row.get::<i64, _>("id") as u64,
-            filename: row.get("filename"),
-            url: row.get("url"),
-            size: row.get::<i64, _>("size") as u64,
-            sha256,
-        },
     }
 }
 
@@ -354,30 +593,113 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_release_metadata_cache() {
+    async fn test_release_metadata_persistence() {
+        let temp_dir = temp_file::empty();
+        let db_path = temp_dir.path().with_extension("db");
+
+        // Create storage and insert release metadata
+        {
+            let storage = SqliteStorage::new(&db_path).await.unwrap();
+
+            // Initially empty
+            let release = storage.find_latest_release().await;
+            assert!(release.is_none());
+
+            // Insert release metadata with architectures
+            let metadata = ReleaseMetadata {
+                origin: "Test".into(),
+                label: "TestLabel".into(),
+                suite: "stable".into(),
+                version: "1.0".into(),
+                codename: "test".into(),
+                date: chrono::DateTime::parse_from_rfc3339("2025-01-21T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+                architectures: vec![ArchitectureMetadata {
+                    name: "amd64".to_string(),
+                    plain_md5: "abc123".to_string(),
+                    plain_sha256: "def456".to_string(),
+                    plain_size: 1000,
+                    compressed_md5: "ghi789".to_string(),
+                    compressed_sha256: "jkl012".to_string(),
+                    compressed_size: 500,
+                    packages: vec![],
+                }],
+                components: vec!["main".to_string()],
+                description: "Test repo".into(),
+            };
+            storage.insert_release(metadata).await;
+
+            // Should be cached
+            let found = storage.find_latest_release().await;
+            assert!(found.is_some());
+            assert_eq!(found.as_ref().unwrap().origin, "Test");
+        }
+
+        // Create new storage instance from same database - should load from DB
+        {
+            let storage = SqliteStorage::new(&db_path).await.unwrap();
+
+            // Should have loaded from database
+            let found = storage.find_latest_release().await;
+            assert!(found.is_some());
+            let found = found.unwrap();
+            assert_eq!(found.origin, "Test");
+            assert_eq!(found.label, "TestLabel");
+            assert_eq!(found.suite, "stable");
+            assert_eq!(found.version, "1.0");
+            assert_eq!(found.codename, "test");
+            assert_eq!(found.components, vec!["main".to_string()]);
+            assert_eq!(found.description, "Test repo");
+
+            // Check architecture metadata was persisted
+            assert_eq!(found.architectures.len(), 1);
+            let arch = &found.architectures[0];
+            assert_eq!(arch.name, "amd64");
+            assert_eq!(arch.plain_md5, "abc123");
+            assert_eq!(arch.plain_sha256, "def456");
+            assert_eq!(arch.plain_size, 1000);
+            assert_eq!(arch.compressed_md5, "ghi789");
+            assert_eq!(arch.compressed_sha256, "jkl012");
+            assert_eq!(arch.compressed_size, 500);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_release_metadata_history() {
         let storage = create_test_storage().await;
 
-        // Initially empty
-        let release = storage.find_latest_release().await;
-        assert!(release.is_none());
-
-        // Insert release metadata
-        let metadata = ReleaseMetadata {
-            origin: "Test".into(),
-            label: "Test".into(),
+        // Insert first release
+        let metadata1 = ReleaseMetadata {
+            origin: "First".into(),
+            label: "First".into(),
             suite: "stable".into(),
             version: "1.0".into(),
-            codename: "test".into(),
+            codename: "first".into(),
             date: Utc::now(),
             architectures: vec![],
             components: vec!["main".to_string()],
-            description: "Test repo".into(),
+            description: "First release".into(),
         };
-        storage.insert_release(metadata.clone()).await;
+        storage.insert_release(metadata1).await;
 
-        // Should be cached
+        // Insert second release
+        let metadata2 = ReleaseMetadata {
+            origin: "Second".into(),
+            label: "Second".into(),
+            suite: "stable".into(),
+            version: "2.0".into(),
+            codename: "second".into(),
+            date: Utc::now(),
+            architectures: vec![],
+            components: vec!["main".to_string()],
+            description: "Second release".into(),
+        };
+        storage.insert_release(metadata2).await;
+
+        // find_latest_release should return the most recent one
         let found = storage.find_latest_release().await;
         assert!(found.is_some());
-        assert_eq!(found.unwrap().origin, "Test");
+        assert_eq!(found.unwrap().origin, "Second");
     }
 }
