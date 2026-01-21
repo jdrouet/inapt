@@ -121,6 +121,12 @@ pub trait PackageSource: Send + Sync + 'static {
         &self,
         asset: &DebAsset,
     ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
+
+    /// Stream releases with their .deb assets for incremental processing.
+    fn stream_releases_with_assets(
+        &self,
+        repo: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<ReleaseWithAssets>>> + Send;
 }
 
 #[cfg(test)]
@@ -140,6 +146,10 @@ mockall::mock! {
             &self,
             asset: &DebAsset,
         ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
+        fn stream_releases_with_assets(
+            &self,
+            repo: &str,
+        ) -> impl Future<Output = anyhow::Result<Vec<ReleaseWithAssets>>> + Send;
     }
 }
 
