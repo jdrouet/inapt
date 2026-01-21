@@ -16,7 +16,7 @@ private_key_path = "resources/private-key.pem"
 # passphrase = "..."
 
 [storage]
-path = "target/storage.json"
+path = "target/inapt.db"
 
 [worker]
 interval = 3600 # 1h
