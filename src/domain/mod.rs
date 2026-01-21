@@ -7,7 +7,7 @@ use std::{
 };
 
 use flate2::{Compression, write::GzEncoder};
-use futures::{StreamExt, TryStreamExt};
+
 use sha2::Digest;
 
 pub(crate) mod entity;
@@ -159,7 +159,12 @@ where
         &self,
         asset: entity::DebAsset,
     ) -> anyhow::Result<Option<entity::Package>> {
-        if let Some(package) = self.release_storage.find_package_by_asset(&asset).await {
+        // Check if package is already stored
+        if let Some(package) = self
+            .package_store
+            .find_package_by_asset_id(asset.asset_id)
+            .await
+        {
             tracing::debug!("package already known, using cached value");
             return Ok(Some(package));
         }
@@ -174,25 +179,46 @@ where
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    async fn synchronize_repo(
-        &self,
-        repo: &str,
-        builder: &mut ReleaseMetadataBuilder,
-    ) -> anyhow::Result<()> {
-        tracing::info!("listing assets");
-        let list = self.package_source.list_deb_assets(repo).await?;
-        let list = futures::stream::iter(
-            list.into_iter()
-                .map(|asset| async move { self.handle_package(asset).await }),
-        )
-        .buffer_unordered(5)
-        .try_collect::<Vec<_>>()
-        .await?;
-        list.into_iter().for_each(|item| {
-            if let Some(item) = item {
-                builder.insert(item);
+    async fn synchronize_repo(&self, repo: &str) -> anyhow::Result<()> {
+        tracing::info!("streaming releases for incremental sync");
+        let releases = self
+            .package_source
+            .stream_releases_with_assets(repo)
+            .await?;
+
+        for release in releases {
+            // Skip already-scanned releases
+            if self
+                .release_tracker
+                .is_release_scanned(&release.repo_owner, &release.repo_name, release.release_id)
+                .await?
+            {
+                tracing::debug!(
+                    release_id = release.release_id,
+                    "release already scanned, skipping"
+                );
+                continue;
             }
-        });
+
+            // Process new release
+            tracing::info!(
+                release_id = release.release_id,
+                assets = release.assets.len(),
+                "processing new release"
+            );
+
+            for asset in release.assets {
+                if let Some(package) = self.handle_package(asset).await? {
+                    self.package_store.insert_package(&package).await?;
+                }
+            }
+
+            // Mark release as scanned
+            self.release_tracker
+                .mark_release_scanned(&release.repo_owner, &release.repo_name, release.release_id)
+                .await?;
+        }
+
         Ok(())
     }
 }
@@ -210,14 +236,22 @@ where
 {
     #[tracing::instrument(skip(self), err(Debug))]
     async fn synchronize(&self) -> anyhow::Result<()> {
-        let mut builder = ReleaseMetadataBuilder::new(self.config.clone());
+        // Sync all repos incrementally
         let mut errors = Vec::with_capacity(self.config.repositories.len());
         for repo in self.config.repositories.iter() {
-            if let Err(err) = self.synchronize_repo(repo.as_str(), &mut builder).await {
+            if let Err(err) = self.synchronize_repo(repo.as_str()).await {
                 errors.push(err);
             }
         }
+
+        // Rebuild release metadata from all stored packages
+        let all_packages = self.package_store.list_all_packages().await?;
+        let mut builder = ReleaseMetadataBuilder::new(self.config.clone());
+        for package in all_packages {
+            builder.insert(package);
+        }
         let release = builder.build::<C>()?;
+
         if errors.is_empty() {
             self.release_storage.insert_release(release).await;
             Ok(())
@@ -414,6 +448,8 @@ SHA256:
 
     #[tokio::test]
     async fn should_do_synchronize_successfully() {
+        use crate::domain::entity::ReleaseWithAssets;
+
         let config = Arc::new(Config {
             origin: "TestOrigin".into(),
             label: "TestLabel".into(),
@@ -421,37 +457,41 @@ SHA256:
             version: "0.1.0".into(),
             codename: "testcode".into(),
             description: "Test repo".into(),
-            repositories: vec!["testrepo".to_string()],
+            repositories: vec!["owner/testrepo".to_string()],
         });
 
         let mut mock_package_source = MockPackageSource::new();
         mock_package_source
-            .expect_list_deb_assets()
-            .returning(|repo| {
-                let repo = repo.to_string();
-                Box::pin(async move {
-                    Ok(vec![
-                        DebAsset {
-                            repo_owner: "owner".to_string(),
-                            repo_name: repo.clone(),
-                            release_id: 1,
-                            asset_id: 1,
-                            filename: "pkg_1.0.0_amd64.deb".to_string(),
-                            url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
-                            size: 1234,
-                            sha256: Some("deadbeef".to_string()),
-                        },
-                        DebAsset {
-                            repo_owner: "owner".to_string(),
-                            repo_name: repo.clone(),
-                            release_id: 1,
-                            asset_id: 2,
-                            filename: "pkg_1.0.0_arm64.deb".to_string(),
-                            url: "http://example.com/pkg_1.0.0_arm64.deb".to_string(),
-                            size: 1234,
-                            sha256: Some("deadbit".to_string()),
-                        },
-                    ])
+            .expect_stream_releases_with_assets()
+            .returning(|_repo| {
+                Box::pin(async {
+                    Ok(vec![ReleaseWithAssets {
+                        release_id: 1,
+                        repo_owner: "owner".to_string(),
+                        repo_name: "testrepo".to_string(),
+                        assets: vec![
+                            DebAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "testrepo".to_string(),
+                                release_id: 1,
+                                asset_id: 1,
+                                filename: "pkg_1.0.0_amd64.deb".to_string(),
+                                url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
+                                size: 1234,
+                                sha256: Some("deadbeef".to_string()),
+                            },
+                            DebAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "testrepo".to_string(),
+                                release_id: 1,
+                                asset_id: 2,
+                                filename: "pkg_1.0.0_arm64.deb".to_string(),
+                                url: "http://example.com/pkg_1.0.0_arm64.deb".to_string(),
+                                size: 1234,
+                                sha256: Some("deadbit".to_string()),
+                            },
+                        ],
+                    }])
                 })
             });
         mock_package_source
@@ -462,39 +502,63 @@ SHA256:
         mock_release_store
             .expect_insert_release()
             .returning(|_entry| Box::pin(async {}));
-        mock_release_store
-            .expect_find_package_by_asset()
-            .returning(|asset| {
-                let asset = asset.clone();
-                Box::pin(async move {
-                    if asset.asset_id == 2 {
-                        Some(Package {
-                            metadata: PackageMetadata {
-                                control: PackageControl {
-                                    package: "pkg".to_string(),
-                                    version: "1.0.0".to_string(),
-                                    section: Some("main".to_string()),
-                                    priority: "optional".to_string(),
-                                    architecture: "arm64".to_string(),
-                                    maintainer: "Tester <test@example.com>".to_string(),
-                                    description: vec!["A test package".to_string()],
-                                    others: HashMap::new(),
-                                },
-                                file: FileMetadata {
-                                    size: 1234,
-                                    sha256: "deadbit".to_string(),
-                                },
+
+        let mut mock_release_tracker = MockReleaseTracker::new();
+        mock_release_tracker
+            .expect_is_release_scanned()
+            .returning(|_, _, _| Box::pin(async { Ok(false) }));
+        mock_release_tracker
+            .expect_mark_release_scanned()
+            .returning(|_, _, _| Box::pin(async { Ok(()) }));
+
+        let mut mock_package_store = MockPackageStore::new();
+        // Asset 2 is already cached
+        mock_package_store
+            .expect_find_package_by_asset_id()
+            .withf(|id| *id == 2)
+            .returning(|_| {
+                Box::pin(async {
+                    Some(Package {
+                        metadata: PackageMetadata {
+                            control: PackageControl {
+                                package: "pkg".to_string(),
+                                version: "1.0.0".to_string(),
+                                section: Some("main".to_string()),
+                                priority: "optional".to_string(),
+                                architecture: "arm64".to_string(),
+                                maintainer: "Tester <test@example.com>".to_string(),
+                                description: vec!["A test package".to_string()],
+                                others: HashMap::new(),
                             },
-                            asset: asset.clone(),
-                        })
-                    } else {
-                        None
-                    }
+                            file: FileMetadata {
+                                size: 1234,
+                                sha256: "deadbit".to_string(),
+                            },
+                        },
+                        asset: DebAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: "testrepo".to_string(),
+                            release_id: 1,
+                            asset_id: 2,
+                            filename: "pkg_1.0.0_arm64.deb".to_string(),
+                            url: "http://example.com/pkg_1.0.0_arm64.deb".to_string(),
+                            size: 1234,
+                            sha256: Some("deadbit".to_string()),
+                        },
+                    })
                 })
             });
-        mock_release_store
-            .expect_find_latest_release()
-            .returning(|| Box::pin(async { None }));
+        // Asset 1 is not cached
+        mock_package_store
+            .expect_find_package_by_asset_id()
+            .withf(|id| *id == 1)
+            .returning(|_| Box::pin(async { None }));
+        mock_package_store
+            .expect_insert_package()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        mock_package_store
+            .expect_list_all_packages()
+            .returning(|| Box::pin(async { Ok(vec![]) }));
 
         let mut mock_deb_extractor = MockDebMetadataExtractor::new();
         mock_deb_extractor
@@ -527,8 +591,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: mock_deb_extractor,
             pgp_cipher: MockPGPCipher::new(),
-            release_tracker: MockReleaseTracker::new(),
-            package_store: MockPackageStore::new(),
+            release_tracker: mock_release_tracker,
+            package_store: mock_package_store,
         };
         let result = AptRepositoryWriter::synchronize(&service).await;
         assert!(result.is_ok());
@@ -546,39 +610,30 @@ SHA256:
             version: "0.1.0".into(),
             codename: "testcode".into(),
             description: "Test repo".into(),
-            repositories: vec!["testrepo".to_string()],
+            repositories: vec!["owner/testrepo".to_string()],
         });
 
         let mut mock_package_source = MockPackageSource::new();
         mock_package_source
-            .expect_list_deb_assets()
+            .expect_stream_releases_with_assets()
             .returning(|_repo| Box::pin(async { Err(anyhow::anyhow!("fail")) }));
-        mock_package_source
-            .expect_fetch_deb()
-            .returning(|_asset| Box::pin(async { Err(anyhow::anyhow!("fail")) }));
 
         let mut mock_release_store = MockReleaseStore::new();
-        mock_release_store
-            .expect_insert_release()
-            .returning(|_entry| Box::pin(async {}));
-        mock_release_store
-            .expect_find_latest_release()
-            .returning(|| Box::pin(async { None }));
 
-        let mut mock_deb_extractor = MockDebMetadataExtractor::new();
-        mock_deb_extractor
-            .expect_extract_metadata()
-            .returning(|_path| Box::pin(async { Err(anyhow::anyhow!("fail")) }));
+        let mut mock_package_store = MockPackageStore::new();
+        mock_package_store
+            .expect_list_all_packages()
+            .returning(|| Box::pin(async { Ok(vec![]) }));
 
         let service = AptRepositoryService {
             config,
             clock: PhantomData::<UniqueClock>,
             package_source: mock_package_source,
             release_storage: mock_release_store,
-            deb_extractor: mock_deb_extractor,
+            deb_extractor: MockDebMetadataExtractor::new(),
             pgp_cipher: MockPGPCipher::new(),
             release_tracker: MockReleaseTracker::new(),
-            package_store: MockPackageStore::new(),
+            package_store: mock_package_store,
         };
         let result = AptRepositoryWriter::synchronize(&service).await;
         assert!(result.is_err());
@@ -870,5 +925,231 @@ SHA256:
         let result =
             crate::domain::prelude::AptRepositoryReader::release_gpg_signature(&service).await;
         assert!(matches!(result, Ok(None)));
+    }
+
+    // Incremental synchronization tests
+
+    #[tokio::test]
+    async fn should_skip_already_scanned_releases() {
+        use crate::domain::entity::ReleaseWithAssets;
+
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["owner/repo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        // Return two releases: one already scanned (id=1), one new (id=2)
+        mock_package_source
+            .expect_stream_releases_with_assets()
+            .returning(|_repo| {
+                Box::pin(async {
+                    Ok(vec![
+                        ReleaseWithAssets {
+                            release_id: 1,
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            assets: vec![DebAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "repo".to_string(),
+                                release_id: 1,
+                                asset_id: 100,
+                                filename: "pkg_1.0.0_amd64.deb".to_string(),
+                                url: "http://example.com/pkg_1.0.0_amd64.deb".to_string(),
+                                size: 1234,
+                                sha256: None,
+                            }],
+                        },
+                        ReleaseWithAssets {
+                            release_id: 2,
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            assets: vec![DebAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "repo".to_string(),
+                                release_id: 2,
+                                asset_id: 200,
+                                filename: "pkg_2.0.0_amd64.deb".to_string(),
+                                url: "http://example.com/pkg_2.0.0_amd64.deb".to_string(),
+                                size: 1234,
+                                sha256: None,
+                            }],
+                        },
+                    ])
+                })
+            });
+        // fetch_deb should only be called once (for release 2)
+        mock_package_source
+            .expect_fetch_deb()
+            .times(1)
+            .returning(|_asset| Box::pin(async { Ok(temp_file::empty()) }));
+
+        let mut mock_release_tracker = MockReleaseTracker::new();
+        // Release 1 is already scanned, release 2 is not
+        mock_release_tracker
+            .expect_is_release_scanned()
+            .withf(|_, _, release_id| *release_id == 1)
+            .returning(|_, _, _| Box::pin(async { Ok(true) }));
+        mock_release_tracker
+            .expect_is_release_scanned()
+            .withf(|_, _, release_id| *release_id == 2)
+            .returning(|_, _, _| Box::pin(async { Ok(false) }));
+        // mark_release_scanned should only be called for release 2
+        mock_release_tracker
+            .expect_mark_release_scanned()
+            .withf(|_, _, release_id| *release_id == 2)
+            .times(1)
+            .returning(|_, _, _| Box::pin(async { Ok(()) }));
+
+        let mut mock_package_store = MockPackageStore::new();
+        // find_package_by_asset_id should be called for the new package (release 2, asset 200)
+        mock_package_store
+            .expect_find_package_by_asset_id()
+            .withf(|id| *id == 200)
+            .times(1)
+            .returning(|_| Box::pin(async { None }));
+        // insert_package should only be called for the new package
+        mock_package_store
+            .expect_insert_package()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        mock_package_store
+            .expect_list_all_packages()
+            .returning(|| Box::pin(async { Ok(vec![]) }));
+
+        let mut mock_release_store = MockReleaseStore::new();
+        mock_release_store
+            .expect_insert_release()
+            .returning(|_| Box::pin(async {}));
+
+        let mut mock_deb_extractor = MockDebMetadataExtractor::new();
+        mock_deb_extractor
+            .expect_extract_metadata()
+            .returning(|_path| {
+                Box::pin(async {
+                    Ok(PackageMetadata {
+                        control: PackageControl {
+                            package: "pkg".to_string(),
+                            version: "2.0.0".to_string(),
+                            section: Some("main".to_string()),
+                            priority: "optional".to_string(),
+                            architecture: "amd64".to_string(),
+                            maintainer: "Tester <test@example.com>".to_string(),
+                            description: vec!["A test package".to_string()],
+                            others: HashMap::new(),
+                        },
+                        file: FileMetadata {
+                            size: 1234,
+                            sha256: "deadbeef".to_string(),
+                        },
+                    })
+                })
+            });
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: mock_package_source,
+            release_storage: mock_release_store,
+            deb_extractor: mock_deb_extractor,
+            pgp_cipher: MockPGPCipher::new(),
+            release_tracker: mock_release_tracker,
+            package_store: mock_package_store,
+        };
+
+        let result = AptRepositoryWriter::synchronize(&service).await;
+        assert!(result.is_ok());
+        // The assertions are in the mock expectations (times(1))
+    }
+
+    #[tokio::test]
+    async fn should_rebuild_metadata_from_stored_packages() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["owner/repo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_stream_releases_with_assets()
+            .returning(|_repo| Box::pin(async { Ok(vec![]) }));
+
+        let mut mock_release_tracker = MockReleaseTracker::new();
+        // No expectations needed - no releases to process
+
+        let mut mock_package_store = MockPackageStore::new();
+        // Return some existing packages
+        mock_package_store.expect_list_all_packages().returning(|| {
+            Box::pin(async {
+                Ok(vec![Package {
+                    metadata: PackageMetadata {
+                        control: PackageControl {
+                            package: "existing-pkg".to_string(),
+                            version: "1.0.0".to_string(),
+                            section: Some("main".to_string()),
+                            priority: "optional".to_string(),
+                            architecture: "amd64".to_string(),
+                            maintainer: "Tester <test@example.com>".to_string(),
+                            description: vec!["An existing package".to_string()],
+                            others: HashMap::new(),
+                        },
+                        file: FileMetadata {
+                            size: 1234,
+                            sha256: "existingsha".to_string(),
+                        },
+                    },
+                    asset: DebAsset {
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        release_id: 1,
+                        asset_id: 100,
+                        filename: "existing-pkg_1.0.0_amd64.deb".to_string(),
+                        url: "http://example.com/existing-pkg_1.0.0_amd64.deb".to_string(),
+                        size: 1234,
+                        sha256: None,
+                    },
+                }])
+            })
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        // Verify that insert_release is called with metadata built from stored packages
+        mock_release_store
+            .expect_insert_release()
+            .withf(|release| {
+                release.architectures.len() == 1
+                    && release.architectures[0].packages.len() == 1
+                    && release.architectures[0].packages[0]
+                        .metadata
+                        .control
+                        .package
+                        == "existing-pkg"
+            })
+            .times(1)
+            .returning(|_| Box::pin(async {}));
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: mock_package_source,
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: MockPGPCipher::new(),
+            release_tracker: mock_release_tracker,
+            package_store: mock_package_store,
+        };
+
+        // This test will fail until we implement incremental sync
+        let _result = AptRepositoryWriter::synchronize(&service).await;
     }
 }
