@@ -63,22 +63,27 @@ impl Config {
 }
 
 #[derive(Clone, Debug)]
-pub struct AptRepositoryService<C, PS, RS, DE, PGP> {
+pub struct AptRepositoryService<C, PS, RS, DE, PGP, RT, PKS> {
     pub config: Arc<Config>,
     pub clock: PhantomData<C>,
     pub package_source: PS,
     pub release_storage: RS,
     pub deb_extractor: DE,
     pub pgp_cipher: PGP,
+    pub release_tracker: RT,
+    pub package_store: PKS,
 }
 
-impl<C, PS, RS, DE, PGP> prelude::AptRepositoryReader for AptRepositoryService<C, PS, RS, DE, PGP>
+impl<C, PS, RS, DE, PGP, RT, PKS> prelude::AptRepositoryReader
+    for AptRepositoryService<C, PS, RS, DE, PGP, RT, PKS>
 where
     C: Send + Sync + 'static,
     PS: Send + Sync + 'static,
     RS: crate::domain::prelude::ReleaseStore,
     DE: Send + Sync + 'static,
     PGP: crate::domain::prelude::PGPCipher,
+    RT: Send + Sync + 'static,
+    PKS: Send + Sync + 'static,
 {
     async fn list_packages(&self, arch: &str) -> anyhow::Result<Vec<entity::Package>> {
         let Some(received) = self.release_storage.find_latest_release().await else {
@@ -131,13 +136,15 @@ where
     }
 }
 
-impl<C, PS, RS, DE, PGP> AptRepositoryService<C, PS, RS, DE, PGP>
+impl<C, PS, RS, DE, PGP, RT, PKS> AptRepositoryService<C, PS, RS, DE, PGP, RT, PKS>
 where
     C: prelude::Clock,
     PS: prelude::PackageSource,
     RS: prelude::ReleaseStore,
     DE: prelude::DebMetadataExtractor,
     PGP: prelude::PGPCipher,
+    RT: prelude::ReleaseTracker,
+    PKS: prelude::PackageStore,
 {
     #[tracing::instrument(
         skip(self),
@@ -190,13 +197,16 @@ where
     }
 }
 
-impl<C, PS, RS, DE, PGP> prelude::AptRepositoryWriter for AptRepositoryService<C, PS, RS, DE, PGP>
+impl<C, PS, RS, DE, PGP, RT, PKS> prelude::AptRepositoryWriter
+    for AptRepositoryService<C, PS, RS, DE, PGP, RT, PKS>
 where
     C: prelude::Clock,
     PS: prelude::PackageSource,
     RS: prelude::ReleaseStore,
     DE: prelude::DebMetadataExtractor,
     PGP: prelude::PGPCipher,
+    RT: prelude::ReleaseTracker,
+    PKS: prelude::PackageStore,
 {
     #[tracing::instrument(skip(self), err(Debug))]
     async fn synchronize(&self) -> anyhow::Result<()> {
@@ -325,7 +335,7 @@ mod tests {
     use crate::domain::entity::{DebAsset, FileMetadata, Package, PackageControl, PackageMetadata};
     use crate::domain::prelude::{
         AptRepositoryWriter, MockDebMetadataExtractor, MockPGPCipher, MockPackageSource,
-        MockReleaseStore,
+        MockPackageStore, MockReleaseStore, MockReleaseTracker,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -517,6 +527,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: mock_deb_extractor,
             pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result = AptRepositoryWriter::synchronize(&service).await;
         assert!(result.is_ok());
@@ -565,6 +577,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: mock_deb_extractor,
             pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result = AptRepositoryWriter::synchronize(&service).await;
         assert!(result.is_err());
@@ -648,6 +662,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
             pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result =
             crate::domain::prelude::AptRepositoryReader::list_packages(&service, "amd64").await;
@@ -681,6 +697,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
             pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result =
             crate::domain::prelude::AptRepositoryReader::list_packages(&service, "amd64").await;
@@ -727,6 +745,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
             pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result = crate::domain::prelude::AptRepositoryReader::release_metadata(&service).await;
         assert!(result.is_ok());
@@ -758,6 +778,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
             pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result = crate::domain::prelude::AptRepositoryReader::release_metadata(&service).await;
         assert!(matches!(result, Ok(None)));
@@ -806,6 +828,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
             pgp_cipher: mock_pgp_cipher,
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result =
             crate::domain::prelude::AptRepositoryReader::release_gpg_signature(&service).await;
@@ -840,6 +864,8 @@ SHA256:
             release_storage: mock_release_store,
             deb_extractor: MockDebMetadataExtractor::new(),
             pgp_cipher: mock_pgp_cipher,
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
         };
         let result =
             crate::domain::prelude::AptRepositoryReader::release_gpg_signature(&service).await;

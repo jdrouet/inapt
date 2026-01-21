@@ -109,6 +109,61 @@ impl crate::domain::prelude::ReleaseStore for MemoryStorage {
     }
 }
 
+// Temporary placeholder implementations - will be replaced by SQLite adapter
+impl crate::domain::prelude::ReleaseTracker for MemoryStorage {
+    async fn is_release_scanned(
+        &self,
+        _repo_owner: &str,
+        _repo_name: &str,
+        _release_id: u64,
+    ) -> anyhow::Result<bool> {
+        // For now, always return false to maintain existing behavior
+        Ok(false)
+    }
+
+    async fn mark_release_scanned(
+        &self,
+        _repo_owner: &str,
+        _repo_name: &str,
+        _release_id: u64,
+    ) -> anyhow::Result<()> {
+        // No-op for now
+        Ok(())
+    }
+}
+
+impl crate::domain::prelude::PackageStore for MemoryStorage {
+    async fn insert_package(&self, _package: &Package) -> anyhow::Result<()> {
+        // No-op for now - packages are stored via ReleaseMetadata
+        Ok(())
+    }
+
+    async fn find_package_by_asset_id(&self, asset_id: u64) -> Option<Package> {
+        self.0
+            .read()
+            .await
+            .value
+            .iter()
+            .flat_map(|meta| meta.architectures.iter())
+            .flat_map(|arch| arch.packages.iter())
+            .find(|pkg| pkg.asset.asset_id == asset_id)
+            .cloned()
+    }
+
+    async fn list_all_packages(&self) -> anyhow::Result<Vec<Package>> {
+        Ok(self
+            .0
+            .read()
+            .await
+            .value
+            .iter()
+            .flat_map(|meta| meta.architectures.iter())
+            .flat_map(|arch| arch.packages.iter())
+            .cloned()
+            .collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::domain::prelude::ReleaseStore;

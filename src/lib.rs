@@ -32,15 +32,17 @@ impl Config {
     }
 
     pub fn build(self) -> anyhow::Result<Application> {
-        let release_storage = self.storage.build()?;
+        let storage = self.storage.build()?;
         let github = self.github.build()?;
         let apt_repository_service = AptRepositoryService {
             package_source: github.clone(),
-            release_storage,
+            release_storage: storage.clone(),
             config: Arc::from(self.config),
             clock: PhantomData::<chrono::Utc>,
             deb_extractor: DebReader,
             pgp_cipher: self.pgp_cipher.build()?,
+            release_tracker: storage.clone(),
+            package_store: storage,
         };
         Ok(Application {
             github,
