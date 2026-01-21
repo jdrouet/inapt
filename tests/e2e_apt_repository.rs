@@ -197,10 +197,10 @@ async fn pull_image(docker: &Docker, image: &str) -> Result<()> {
             Ok(info) => {
                 if let Some(status) = info.status {
                     print!("{}", status);
-                    if let Some(progress_detail) = info.progress_detail {
-                        if let Some(current) = progress_detail.current {
-                            print!(" {}", current);
-                        }
+                    if let Some(progress_detail) = info.progress_detail
+                        && let Some(current) = progress_detail.current
+                    {
+                        print!(" {}", current);
                     }
                     println!();
                 }
