@@ -5,6 +5,7 @@ use axum::routing::get;
 
 use crate::adapter_http_server::ServerState;
 
+mod by_hash;
 mod inrelease;
 mod packages;
 mod pool_redirect;
@@ -26,6 +27,10 @@ where
         .route(
             "/dists/stable/main/binary-{arch}/Packages.gz",
             get(packages::gz_handler),
+        )
+        .route(
+            "/dists/stable/main/binary-{arch}/by-hash/SHA256/{hash}",
+            get(by_hash::handler),
         )
         .route("/pool/main/{p}/{pkg}/{file}", get(pool_redirect::handler))
 }

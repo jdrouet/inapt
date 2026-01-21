@@ -127,6 +127,7 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
         writeln!(f, "Codename: {}", self.0.codename)?;
         writeln!(f, "Components: {}", self.0.components.join(" "))?;
         writeln!(f, "Date: {}", self.0.date.to_rfc2822())?;
+        writeln!(f, "Acquire-By-Hash: yes")?;
         writeln!(f, "Description: {}", self.0.description)?;
         if !self.0.architectures.is_empty() {
             f.write_str("\n")?;
