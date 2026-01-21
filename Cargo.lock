@@ -1478,7 +1478,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "reqwest 0.13.1",
- "reqwest-middleware 0.5.0",
+ "reqwest-middleware",
  "reqwest-retry",
  "reqwest-tracing",
  "sequoia-openpgp",
@@ -2534,21 +2534,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest-middleware"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57f17d28a6e6acfe1733fe24bcd30774d13bffa4b8a22535b4c8c98423088d4e"
-dependencies = [
- "anyhow",
- "async-trait",
- "http",
- "reqwest 0.12.24",
- "serde",
- "thiserror 1.0.69",
- "tower-service",
-]
-
-[[package]]
-name = "reqwest-middleware"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f42e2f48018a33d679ee7f477a446b697663a14e91ab0b3a0206792a22dd3aa8"
@@ -2575,7 +2560,7 @@ dependencies = [
  "http",
  "hyper",
  "reqwest 0.13.1",
- "reqwest-middleware 0.5.0",
+ "reqwest-middleware",
  "retry-policies",
  "thiserror 2.0.17",
  "tokio",
@@ -2585,17 +2570,17 @@ dependencies = [
 
 [[package]]
 name = "reqwest-tracing"
-version = "0.5.8"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d70ea85f131b2ee9874f0b160ac5976f8af75f3c9badfe0d955880257d10bd83"
+checksum = "3bce5a3624f12d0f1eb94d352abdef80902e29a612c40d26147f0e236d049352"
 dependencies = [
  "anyhow",
  "async-trait",
  "getrandom 0.2.16",
  "http",
  "matchit",
- "reqwest 0.12.24",
- "reqwest-middleware 0.4.2",
+ "reqwest 0.13.1",
+ "reqwest-middleware",
  "tracing",
 ]
 
