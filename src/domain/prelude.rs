@@ -168,6 +168,85 @@ mockall::mock! {
     }
 }
 
+/// Tracks which GitHub releases have been scanned.
+pub trait ReleaseTracker: Send + Sync + 'static {
+    /// Check if a release has already been scanned.
+    fn is_release_scanned(
+        &self,
+        repo_owner: &str,
+        repo_name: &str,
+        release_id: u64,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+    /// Mark a release as scanned.
+    fn mark_release_scanned(
+        &self,
+        repo_owner: &str,
+        repo_name: &str,
+        release_id: u64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub ReleaseTracker {}
+
+    impl Clone for ReleaseTracker {
+        fn clone(&self) -> Self;
+    }
+
+    impl ReleaseTracker for ReleaseTracker {
+        fn is_release_scanned(
+            &self,
+            repo_owner: &str,
+            repo_name: &str,
+            release_id: u64,
+        ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+
+        fn mark_release_scanned(
+            &self,
+            repo_owner: &str,
+            repo_name: &str,
+            release_id: u64,
+        ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    }
+}
+
+/// Stores individual packages for incremental updates.
+pub trait PackageStore: Send + Sync + 'static {
+    /// Insert a package into storage.
+    fn insert_package(&self, package: &Package) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Find a package by its asset ID.
+    fn find_package_by_asset_id(
+        &self,
+        asset_id: u64,
+    ) -> impl Future<Output = Option<Package>> + Send;
+
+    /// Get all packages for building ReleaseMetadata.
+    fn list_all_packages(&self) -> impl Future<Output = anyhow::Result<Vec<Package>>> + Send;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub PackageStore {}
+
+    impl Clone for PackageStore {
+        fn clone(&self) -> Self;
+    }
+
+    impl PackageStore for PackageStore {
+        fn insert_package(&self, package: &Package) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+        fn find_package_by_asset_id(
+            &self,
+            asset_id: u64,
+        ) -> impl Future<Output = Option<Package>> + Send;
+
+        fn list_all_packages(&self) -> impl Future<Output = anyhow::Result<Vec<Package>>> + Send;
+    }
+}
+
 pub trait Clock: Send + Sync + 'static {
     fn now() -> DateTime<Utc>;
 }
