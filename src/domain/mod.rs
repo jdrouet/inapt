@@ -1177,4 +1177,229 @@ SHA256:
         // This test will fail until we implement incremental sync
         let _result = AptRepositoryWriter::synchronize(&service).await;
     }
+
+    // find_architecture_by_hash tests
+
+    #[tokio::test]
+    async fn should_find_architecture_by_plain_hash() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        let arch_meta = crate::domain::entity::ArchitectureMetadata {
+            name: "amd64".to_string(),
+            plain_md5: "plainmd5".to_string(),
+            plain_sha256: "plainsha256".to_string(),
+            plain_size: 100,
+            compressed_md5: "compressedmd5".to_string(),
+            compressed_sha256: "compressedsha256".to_string(),
+            compressed_size: 50,
+            packages: vec![],
+        };
+        let release_meta = crate::domain::entity::ReleaseMetadata {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            date: chrono::Utc::now(),
+            architectures: vec![arch_meta],
+            components: vec!["main".to_string()],
+            description: "Test repo".into(),
+        };
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(move || {
+                let release_meta = release_meta.clone();
+                Box::pin(async move { Some(release_meta) })
+            });
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
+        };
+
+        let result = crate::domain::prelude::AptRepositoryReader::find_architecture_by_hash(
+            &service,
+            "plainsha256",
+        )
+        .await;
+        assert!(result.is_ok());
+        let hash_match = result.unwrap().unwrap();
+        assert_eq!(hash_match.architecture, "amd64");
+        assert!(!hash_match.compressed);
+    }
+
+    #[tokio::test]
+    async fn should_find_architecture_by_compressed_hash() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        let arch_meta = crate::domain::entity::ArchitectureMetadata {
+            name: "arm64".to_string(),
+            plain_md5: "plainmd5".to_string(),
+            plain_sha256: "plainsha256".to_string(),
+            plain_size: 100,
+            compressed_md5: "compressedmd5".to_string(),
+            compressed_sha256: "compressedsha256".to_string(),
+            compressed_size: 50,
+            packages: vec![],
+        };
+        let release_meta = crate::domain::entity::ReleaseMetadata {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            date: chrono::Utc::now(),
+            architectures: vec![arch_meta],
+            components: vec!["main".to_string()],
+            description: "Test repo".into(),
+        };
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(move || {
+                let release_meta = release_meta.clone();
+                Box::pin(async move { Some(release_meta) })
+            });
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
+        };
+
+        let result = crate::domain::prelude::AptRepositoryReader::find_architecture_by_hash(
+            &service,
+            "compressedsha256",
+        )
+        .await;
+        assert!(result.is_ok());
+        let hash_match = result.unwrap().unwrap();
+        assert_eq!(hash_match.architecture, "arm64");
+        assert!(hash_match.compressed);
+    }
+
+    #[tokio::test]
+    async fn should_return_none_for_unknown_hash() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        let arch_meta = crate::domain::entity::ArchitectureMetadata {
+            name: "amd64".to_string(),
+            plain_md5: "plainmd5".to_string(),
+            plain_sha256: "plainsha256".to_string(),
+            plain_size: 100,
+            compressed_md5: "compressedmd5".to_string(),
+            compressed_sha256: "compressedsha256".to_string(),
+            compressed_size: 50,
+            packages: vec![],
+        };
+        let release_meta = crate::domain::entity::ReleaseMetadata {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            date: chrono::Utc::now(),
+            architectures: vec![arch_meta],
+            components: vec!["main".to_string()],
+            description: "Test repo".into(),
+        };
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(move || {
+                let release_meta = release_meta.clone();
+                Box::pin(async move { Some(release_meta) })
+            });
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
+        };
+
+        let result = crate::domain::prelude::AptRepositoryReader::find_architecture_by_hash(
+            &service,
+            "unknownhash",
+        )
+        .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn should_return_none_when_no_release() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(|| Box::pin(async { None }));
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: MockPGPCipher::new(),
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
+        };
+
+        let result = crate::domain::prelude::AptRepositoryReader::find_architecture_by_hash(
+            &service, "anyhash",
+        )
+        .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
 }
