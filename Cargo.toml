@@ -58,8 +58,12 @@ xz2 = "0.1"      # for .xz
 zstd = "0.13"    # for .zst
 
 [dev-dependencies]
+anyhow = "1.0"
+bollard = "0.20"
+bytes = "1"
 mockall = "0.14"
 similar-asserts = "1.7"
+tempfile = "3"
 
 [package.metadata.cargo-machete]
 ignored = ["md-5"]
