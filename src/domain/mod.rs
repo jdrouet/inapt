@@ -158,6 +158,38 @@ where
         }
         Ok(None)
     }
+
+    async fn translation_file(&self) -> anyhow::Result<String> {
+        let Some(received) = self.release_storage.find_latest_release().await else {
+            return Ok(String::new());
+        };
+
+        // Collect unique packages by name (deduplicate across architectures)
+        let mut seen_packages: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut entries = Vec::new();
+
+        for arch in &received.architectures {
+            for package in &arch.packages {
+                let pkg_name = &package.metadata.control.package;
+                if seen_packages.insert(pkg_name.clone()) {
+                    entries.push(entity::TranslationEntry {
+                        package: pkg_name.clone(),
+                        description_md5: package.metadata.control.description_md5(),
+                        description: package.metadata.control.description.clone(),
+                    });
+                }
+            }
+        }
+
+        // Sort entries by package name for consistent output
+        entries.sort_by(|a, b| a.package.cmp(&b.package));
+
+        Ok(entries
+            .into_iter()
+            .map(|entry| entry.to_string())
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
 }
 
 impl<C, PS, RS, DE, PGP, RT, PKS> AptRepositoryService<C, PS, RS, DE, PGP, RT, PKS>
@@ -307,6 +339,15 @@ impl ReleaseMetadataBuilder {
     }
 
     fn build<C: prelude::Clock>(self) -> anyhow::Result<entity::ReleaseMetadata> {
+        let architectures: Vec<entity::ArchitectureMetadata> = self
+            .architectures
+            .into_iter()
+            .map(|(name, values)| values.build(name))
+            .collect::<Result<_, _>>()?;
+
+        // Build translation metadata from all packages
+        let translation = Self::build_translation_metadata(&architectures)?;
+
         Ok(entity::ReleaseMetadata {
             origin: self.config.origin.clone(),
             label: self.config.label.clone(),
@@ -314,13 +355,66 @@ impl ReleaseMetadataBuilder {
             version: self.config.version.clone(),
             codename: self.config.codename.clone(),
             date: C::now(),
-            architectures: self
-                .architectures
-                .into_iter()
-                .map(|(name, values)| values.build(name))
-                .collect::<Result<_, _>>()?,
+            architectures,
             components: vec!["main".into()],
             description: self.config.description.clone(),
+            translation,
+        })
+    }
+
+    fn build_translation_metadata(
+        architectures: &[entity::ArchitectureMetadata],
+    ) -> anyhow::Result<entity::TranslationMetadata> {
+        use sha2::Digest;
+
+        // Collect unique packages by name (deduplicate across architectures)
+        let mut seen_packages: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut entries = Vec::new();
+
+        for arch in architectures {
+            for package in &arch.packages {
+                let pkg_name = &package.metadata.control.package;
+                if seen_packages.insert(pkg_name.clone()) {
+                    entries.push(entity::TranslationEntry {
+                        package: pkg_name.clone(),
+                        description_md5: package.metadata.control.description_md5(),
+                        description: package.metadata.control.description.clone(),
+                    });
+                }
+            }
+        }
+
+        // Sort entries by package name for consistent output
+        entries.sort_by(|a, b| a.package.cmp(&b.package));
+
+        // Build the translation file content
+        let content = entries
+            .into_iter()
+            .map(|entry| entry.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Compute hashes
+        let plain_md5 = hex::encode(md5::Md5::digest(content.as_bytes()));
+        let plain_sha256 = hex::encode(sha2::Sha256::digest(content.as_bytes()));
+        let plain_size = content.len() as u64;
+
+        // Compress and compute compressed hashes
+        let mut gz_encoder = GzEncoder::new(Vec::new(), Compression::default());
+        gz_encoder.write_all(content.as_bytes())?;
+        let compressed = gz_encoder.finish()?;
+
+        let compressed_md5 = hex::encode(md5::Md5::digest(&compressed));
+        let compressed_sha256 = hex::encode(sha2::Sha256::digest(&compressed));
+        let compressed_size = compressed.len() as u64;
+
+        Ok(entity::TranslationMetadata {
+            plain_md5,
+            plain_sha256,
+            plain_size,
+            compressed_md5,
+            compressed_sha256,
+            compressed_size,
         })
     }
 }
@@ -463,10 +557,14 @@ Description: Test repo
 MD5Sum:
  24494e2b696b17a2eb93c60ba0c748f5 194 main/binary-amd64/Packages
  91d18c5b19270aa56499f4acc31cd4b9 163 main/binary-amd64/Packages.gz
+ 4560b9c7df212c1581d534d4a0155574 95 main/i18n/Translation-en
+ 03ba6610c12e09a7f056d6f226897523 96 main/i18n/Translation-en.gz
 
 SHA256:
  8540b64a3eb6bc9b0484d834ff12807404e36bb772ac4e2a670ac9cbbea25835 194 main/binary-amd64/Packages
  50d369648988d47ab31354996318e48efb94480e7691c330bd2eae22da8b2a11 163 main/binary-amd64/Packages.gz
+ 019bd63f026628d1fcea9640c827b81b62cf4b8663221786ff1115dde1c30067 95 main/i18n/Translation-en
+ 2b3d9c8e6b3c453c2cf5a460a6ba325bcf41c8c8917c5026dd84221e57c68aac 96 main/i18n/Translation-en.gz
 "#
         );
     }
@@ -727,6 +825,7 @@ SHA256:
             architectures: vec![arch_meta],
             components: vec!["main".to_string()],
             description: "Test repo".into(),
+            translation: Default::default(),
         };
         mock_release_store
             .expect_find_latest_release()
@@ -810,6 +909,7 @@ SHA256:
             architectures: vec![],
             components: vec!["main".to_string()],
             description: "Test repo".into(),
+            translation: Default::default(),
         };
         mock_release_store
             .expect_find_latest_release()
@@ -888,6 +988,7 @@ SHA256:
             architectures: vec![],
             components: vec!["main".to_string()],
             description: "Test repo".into(),
+            translation: Default::default(),
         };
         mock_release_store
             .expect_find_latest_release()
@@ -1213,6 +1314,7 @@ SHA256:
             architectures: vec![arch_meta],
             components: vec!["main".to_string()],
             description: "Test repo".into(),
+            translation: Default::default(),
         };
         mock_release_store
             .expect_find_latest_release()
@@ -1276,6 +1378,7 @@ SHA256:
             architectures: vec![arch_meta],
             components: vec!["main".to_string()],
             description: "Test repo".into(),
+            translation: Default::default(),
         };
         mock_release_store
             .expect_find_latest_release()
@@ -1339,6 +1442,7 @@ SHA256:
             architectures: vec![arch_meta],
             components: vec!["main".to_string()],
             description: "Test repo".into(),
+            translation: Default::default(),
         };
         mock_release_store
             .expect_find_latest_release()
