@@ -1,92 +1,237 @@
 # inapt
 
-A minimal Debian/Ubuntu APT repository proxy written in Rust. It exposes a valid APT repo structure over HTTP but sources .deb packages directly from GitHub Release assets. Useful for distributing packages without hosting your own artifact storage.
-
-> ⚠️ The following readme is a goal, it's not yet implemented...
+A minimal Debian/Ubuntu APT repository proxy written in Rust. It exposes a valid APT repository structure over HTTP while sourcing `.deb` packages directly from GitHub Release assets. Useful for distributing packages without hosting your own artifact storage.
 
 ## Features
 
-- Exposes a Debian repository structure over HTTP:
-  - `dists/<suite>/Release`
-  - `dists/<suite>/<component>/binary-<arch>/Packages(.gz)`
-  - `pool/main/.../*.deb`
-- Dynamically builds Packages and Release from GitHub Release assets.
-- 302 redirects `.deb` downloads to GitHub (leverages GitHub CDN).
-- Supports multiple repositories (via `REPOS=owner1/repo1,owner2/repo2`).
-- Caches results in memory (configurable TTL).
-- Extracts control metadata from .deb to generate proper Packages entries.
+- **Full APT Repository Structure**: Exposes standard Debian repository endpoints:
+  - `dists/<suite>/Release` - Repository metadata
+  - `dists/<suite>/InRelease` - Signed repository metadata
+  - `dists/<suite>/Release.gpg` - Detached GPG signature
+  - `dists/<suite>/<component>/binary-<arch>/Packages(.gz)` - Package indices
+  - `dists/<suite>/<component>/binary-<arch>/by-hash/SHA256/<hash>` - By-hash index retrieval
+  - `dists/<suite>/<component>/i18n/Translation-<lang>(.gz|.bz2|.xz)` - Package descriptions
+  - `pool/main/.../*.deb` - Package downloads (302 redirects to GitHub)
 
-⚠️ Signing (`InRelease/Release.gpg`) is not yet implemented.
+- **GPG Signing**: Full support for signed releases with `InRelease` and `Release.gpg`
+
+- **By-Hash Support**: Implements `Acquire-By-Hash` for atomic index updates
+
+- **Translation Files**: Serves `Translation-en` files with package descriptions in multiple compression formats (gzip, bzip2, xz)
+
+- **GitHub Integration**:
+  - Dynamically builds Packages and Release metadata from GitHub Release assets
+  - 302 redirects `.deb` downloads to GitHub (leverages GitHub CDN)
+  - Supports multiple repositories
+  - Optional authentication for private repositories and higher rate limits
+
+- **Persistence**: SQLite backend for tracking scanned releases and caching package metadata
+
+- **Incremental Synchronization**: Only processes new releases, skipping already-scanned ones
+
+- **Observability**: Full OpenTelemetry support for tracing, metrics, and logs
 
 ## Quick Start
 
-1. Clone & configure
+### 1. Generate GPG keys
 
 ```bash
-git clone https://github.com/jdrouet/inapt.git
-cd inapt
+cargo run --bin inapt-genkey > resources/private-key.pem
 ```
 
-Edit .env to list the GitHub repos you want to expose, e.g.:
+Extract the public key to share with users:
 
-```
-REPO_ORIGIN=My Origin
-REPO_LABEL=Debian
-REPO_SUITE=sable
-REPO_VERSION=1.2.3
-REPO_CODENAME=cucumber
-REPO_DESCRIPTION=How you want to describe it
-REPO_REPOSITORIES=myorg/myproject
+```bash
+# The public key is printed first in the output
+head -n 20 resources/private-key.pem > public-key.asc
 ```
 
-2. Run
+### 2. Configure
 
+Create a `config.toml` file:
+
+```toml
+[core]
+origin = "My Repository"
+label = "Debian"
+suite = "stable"
+version = "1.0.0"
+codename = "cucumber"
+description = "Packages from GitHub releases"
+repositories = ["myorg/myproject", "myorg/another-project"]
+
+[github]
+# Optional: for private repos or higher rate limits
+# token = "ghp_..."
+
+[http_server]
+address = "0.0.0.0"
+port = 3000
+
+[pgp_cipher]
+private_key_path = "resources/private-key.pem"
+# passphrase = "optional-passphrase"
+
+[sqlite]
+path = "inapt.db"
+
+[worker]
+interval = 3600  # Sync every hour (default: 43200 = 12 hours)
 ```
+
+### 3. Run
+
+```bash
 cargo run
+# Or with custom config path:
+CONFIG_PATH=/path/to/config.toml cargo run
 ```
 
-The proxy listens on 0.0.0.0:3000 by default.
+The proxy listens on `0.0.0.0:3000` by default.
 
-3. Configure APT client
+### 4. Configure APT client
 
-For now, you must trust the repo (unsigned):
+Add the repository and GPG key:
 
-```
-echo "deb [trusted=yes] http://localhost:3000 stable main" | sudo tee /etc/apt/sources.list.d/inapt.list
+```bash
+# Add the GPG key
+curl -fsSL http://localhost:3000/public-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/inapt.gpg
+
+# Add the repository
+echo "deb [signed-by=/usr/share/keyrings/inapt.gpg] http://localhost:3000 stable main" | \
+  sudo tee /etc/apt/sources.list.d/inapt.list
+
+# Update and install
 sudo apt update
-```
-
-Then you can install packages from your proxied repos:
-
-```
 sudo apt install mypackage
 ```
 
-## Configuration
+For testing without signature verification (not recommended for production):
 
-The server is configured through environment variables:
+```bash
+echo "deb [trusted=yes] http://localhost:3000 stable main" | \
+  sudo tee /etc/apt/sources.list.d/inapt.list
+```
+
+## Configuration Reference
+
+### Configuration File (TOML)
+
+| Section | Key | Description | Default |
+|---------|-----|-------------|---------|
+| `core` | `origin` | Repository origin field | |
+| `core` | `label` | Repository label | |
+| `core` | `suite` | Distribution suite (e.g., stable) | |
+| `core` | `version` | Repository version | |
+| `core` | `codename` | Distribution codename | |
+| `core` | `description` | Repository description | |
+| `core` | `repositories` | List of GitHub repos (owner/repo) | |
+| `github` | `base_url` | GitHub API URL | `https://api.github.com` |
+| `github` | `token` | GitHub token (optional) | |
+| `github` | `max_retry` | Max HTTP retries | `5` |
+| `github` | `timeout` | Request timeout (seconds) | `60` |
+| `http_server` | `address` | Bind address | `0.0.0.0` |
+| `http_server` | `port` | Bind port | `3000` |
+| `pgp_cipher` | `private_key_path` | Path to GPG private key | |
+| `pgp_cipher` | `passphrase` | Key passphrase (optional) | |
+| `sqlite` | `path` | SQLite database path | |
+| `worker` | `interval` | Sync interval (seconds) | `43200` (12h) |
+
+### Environment Variables (Tracing)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REPO_REPOSITORIES` | Comma-separated owner/repo list to scan for releases | |
-| `REPO_SUITE` | Distribution codename (e.g., stable) | stable |
-| `GITHUB_TOKEN` | Optional token (higher rate limit, private repos) | none |
+| `TRACING_MODE` | `console` or `otel` | `console` |
+| `TRACING_LEVEL` | Log level filter | `info` |
+| `TRACING_CONSOLE_COLOR` | Enable colored output | `true` |
+| `TRACING_OTEL_ENDPOINT` | OTLP gRPC endpoint | `http://localhost:4317` |
+| `ENV` | Deployment environment | |
+
+## Docker
+
+### Using Docker Compose
+
+```bash
+docker-compose up
+```
+
+### Manual Docker Build
+
+```bash
+docker build -t inapt .
+docker run -p 3000:3000 \
+  -v ./config.toml:/etc/inapt/config.toml \
+  -v ./inapt.db:/data/inapt.db \
+  -v ./resources/private-key.pem:/etc/inapt/private-key.pem \
+  inapt
+```
+
+## Architecture
+
+inapt follows a hexagonal (ports & adapters) architecture:
+
+```
+                    ┌─────────────────────────────────────┐
+                    │           Domain Layer              │
+                    │  ┌─────────────────────────────┐   │
+                    │  │   AptRepositoryService      │   │
+                    │  │   - Synchronization         │   │
+                    │  │   - Metadata generation     │   │
+                    │  │   - Package indexing        │   │
+                    │  └─────────────────────────────┘   │
+                    └─────────────────────────────────────┘
+                                    │
+        ┌───────────────┬───────────┼───────────┬───────────────┐
+        ▼               ▼           ▼           ▼               ▼
+┌───────────────┐ ┌───────────┐ ┌────────┐ ┌─────────┐ ┌───────────────┐
+│  HTTP Server  │ │  GitHub   │ │  DEB   │ │   PGP   │ │    SQLite     │
+│    (Axum)     │ │   Client  │ │ Reader │ │ Signer  │ │   Storage     │
+└───────────────┘ └───────────┘ └────────┘ └─────────┘ └───────────────┘
+```
+
+## Development
+
+```bash
+# Build
+cargo build
+
+# Run tests
+cargo test
+
+# Run E2E tests (requires Docker)
+cargo test --test e2e_apt_repository -- --ignored
+
+# Format & lint
+cargo fmt
+cargo clippy
+
+# Generate coverage report
+cargo llvm-cov
+```
 
 ## Roadmap
 
-- [ ] Add GPG signing for Release → InRelease.
-- [ ] ETag/If-None-Match against GitHub API for better efficiency.
-- [ ] On-disk cache of package metadata to avoid re-downloading assets.
-- [ ] Add by-hash support (by-hash/SHA256/...).
-- [ ] Multiple suites/components support.
-- [ ] Range proxy mode for private repositories (instead of redirect).
+### High Priority
+
+- [ ] Health check endpoint (`/health`) for load balancers and Kubernetes probes
+- [ ] Public key endpoint (`/public-key.asc`) to serve GPG key directly
+- [ ] ETag/If-None-Match caching against GitHub API for reduced API calls
+
+### Medium Priority
+
+- [ ] Package version retention policy (keep only N latest versions per package)
+- [ ] Multiple components support (organize packages beyond `main`)
+- [ ] Range proxy mode for private repositories (stream through instead of redirect)
+- [ ] Package filtering (include/exclude patterns for .deb files)
+
+### Low Priority
+
+- [ ] PostgreSQL backend option for larger deployments
+- [ ] Web UI for repository browsing
+- [ ] Webhook support for immediate sync on new GitHub releases
 
 ## License
 
 This project is licensed under the **AGPL-3.0**.
 
 For companies or organizations that wish to use this software in a commercial context **without the obligations of the AGPL**, a **commercial license** is available. Please contact us at **contact@jdrouet.fr** for details.
-
-## Status
-
-Draft/experimental. Tested with apt on Debian/Ubuntu for basic package installs. Needs signing and caching improvements for production use.
