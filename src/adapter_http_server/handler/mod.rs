@@ -11,6 +11,7 @@ mod packages;
 mod pool_redirect;
 mod release;
 mod release_gpg;
+mod translation;
 
 pub fn build<AR>() -> axum::Router<ServerState<AR>>
 where
@@ -33,6 +34,23 @@ where
             get(by_hash::handler),
         )
         .route("/pool/main/{p}/{pkg}/{file}", get(pool_redirect::handler))
+        // Translation files (i18n) - return empty content to avoid 404 errors
+        .route(
+            "/dists/stable/main/i18n/Translation-{lang}",
+            get(translation::handler),
+        )
+        .route(
+            "/dists/stable/main/i18n/Translation-{lang}.gz",
+            get(translation::gz_handler),
+        )
+        .route(
+            "/dists/stable/main/i18n/Translation-{lang}.bz2",
+            get(translation::bz2_handler),
+        )
+        .route(
+            "/dists/stable/main/i18n/Translation-{lang}.xz",
+            get(translation::xz_handler),
+        )
 }
 
 #[derive(Debug)]
