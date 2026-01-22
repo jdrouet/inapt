@@ -192,22 +192,27 @@ mockall::mock! {
     }
 }
 
+/// Identifies a GitHub release by its owner, name, and ID.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ReleaseIdentifier {
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub release_id: u64,
+}
+
 /// Tracks which GitHub releases have been scanned.
 pub trait ReleaseTracker: Send + Sync + 'static {
-    /// Check if a release has already been scanned.
-    fn is_release_scanned(
+    /// Check which releases from a batch have already been scanned.
+    /// Returns a set of release IDs that have been scanned.
+    fn filter_scanned_releases(
         &self,
-        repo_owner: &str,
-        repo_name: &str,
-        release_id: u64,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+        releases: &[ReleaseIdentifier],
+    ) -> impl Future<Output = anyhow::Result<std::collections::HashSet<u64>>> + Send;
 
-    /// Mark a release as scanned.
-    fn mark_release_scanned(
+    /// Mark multiple releases as scanned in a single batch operation.
+    fn mark_releases_scanned(
         &self,
-        repo_owner: &str,
-        repo_name: &str,
-        release_id: u64,
+        releases: &[ReleaseIdentifier],
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
@@ -220,26 +225,25 @@ mockall::mock! {
     }
 
     impl ReleaseTracker for ReleaseTracker {
-        fn is_release_scanned(
+        fn filter_scanned_releases(
             &self,
-            repo_owner: &str,
-            repo_name: &str,
-            release_id: u64,
-        ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+            releases: &[ReleaseIdentifier],
+        ) -> impl Future<Output = anyhow::Result<std::collections::HashSet<u64>>> + Send;
 
-        fn mark_release_scanned(
+        fn mark_releases_scanned(
             &self,
-            repo_owner: &str,
-            repo_name: &str,
-            release_id: u64,
+            releases: &[ReleaseIdentifier],
         ) -> impl Future<Output = anyhow::Result<()>> + Send;
     }
 }
 
 /// Stores individual packages for incremental updates.
 pub trait PackageStore: Send + Sync + 'static {
-    /// Insert a package into storage.
-    fn insert_package(&self, package: &Package) -> impl Future<Output = anyhow::Result<()>> + Send;
+    /// Insert multiple packages into storage in a single batch operation.
+    fn insert_packages(
+        &self,
+        packages: &[Package],
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
     /// Find a package by its asset ID.
     fn find_package_by_asset_id(
@@ -260,7 +264,10 @@ mockall::mock! {
     }
 
     impl PackageStore for PackageStore {
-        fn insert_package(&self, package: &Package) -> impl Future<Output = anyhow::Result<()>> + Send;
+        fn insert_packages(
+            &self,
+            packages: &[Package],
+        ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
         fn find_package_by_asset_id(
             &self,
