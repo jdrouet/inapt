@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/jdrouet/inapt/compare/v0.3.0...v0.3.1) - 2026-01-22
+
+### Added
+
+- serve actual package descriptions in Translation-en files ([#44](https://github.com/jdrouet/inapt/pull/44))
+- serve empty translation files to avoid APT client 404 errors ([#42](https://github.com/jdrouet/inapt/pull/42))
+
+### Other
+
+- add multiarch Docker image build to release workflow ([#45](https://github.com/jdrouet/inapt/pull/45))
+- update README with implemented features and roadmap
+
 ## [0.3.0](https://github.com/jdrouet/inapt/compare/v0.2.1...v0.3.0) - 2026-01-21
 
 ### Added
