@@ -34,14 +34,14 @@ where
             get(by_hash::handler),
         )
         .route("/pool/main/{p}/{pkg}/{file}", get(pool_redirect::handler))
-        // Translation files (i18n) - return empty content to avoid 404 errors
+        // Translation files (i18n) - serve actual English descriptions
         .route(
             "/dists/stable/main/i18n/Translation-{lang}",
-            get(translation::handler),
+            get(translation::handler::<AR>),
         )
         .route(
             "/dists/stable/main/i18n/Translation-{lang}.gz",
-            get(translation::gz_handler),
+            get(translation::gz_handler::<AR>),
         )
         .route(
             "/dists/stable/main/i18n/Translation-{lang}.bz2",

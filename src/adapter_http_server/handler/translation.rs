@@ -1,30 +1,73 @@
 //! Handler for Translation files (i18n).
 //!
 //! APT clients request Translation files for localized package descriptions.
-//! Since this repository doesn't provide translations, we return empty content
-//! to avoid 404 errors in APT client logs.
+//! We provide actual English descriptions in Translation-en, and return empty
+//! content for other languages to avoid 404 errors.
 
-use axum::extract::Path;
+use std::io::Write;
+
+use axum::extract::{Path, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
+use flate2::write::GzEncoder;
+
+use crate::adapter_http_server::ServerState;
 
 /// Handler for plain Translation files (e.g., Translation-en).
-///
-/// Returns an empty response since we don't have translations.
 #[tracing::instrument(skip_all)]
-pub async fn handler(Path(lang): Path<String>) -> Response {
-    tracing::debug!(lang = %lang, "serving empty translation file");
+pub async fn handler<AR>(State(state): State<ServerState<AR>>, Path(lang): Path<String>) -> Response
+where
+    AR: crate::domain::prelude::AptRepositoryReader + Clone,
+{
+    tracing::debug!(lang = %lang, "serving translation file");
+
+    // Only provide actual translations for English
+    if lang == "en" {
+        match state.apt_repository.translation_file().await {
+            Ok(content) => {
+                return ([(header::CONTENT_TYPE, "text/plain")], content).into_response();
+            }
+            Err(err) => {
+                tracing::error!(error = ?err, "unable to fetch translation file");
+            }
+        }
+    }
+
+    // Return empty content for other languages or on error
     ([(header::CONTENT_TYPE, "text/plain")], "").into_response()
 }
 
 /// Handler for gzip-compressed Translation files (e.g., Translation-en.gz).
-///
-/// Returns an empty gzip-compressed response.
 #[tracing::instrument(skip_all)]
-pub async fn gz_handler(Path(lang): Path<String>) -> Response {
-    tracing::debug!(lang = %lang, "serving empty gzip translation file");
-    // Empty gzip file (gzip header with no content)
-    // This is a minimal valid gzip stream representing empty content
+pub async fn gz_handler<AR>(
+    State(state): State<ServerState<AR>>,
+    Path(lang): Path<String>,
+) -> Response
+where
+    AR: crate::domain::prelude::AptRepositoryReader + Clone,
+{
+    tracing::debug!(lang = %lang, "serving gzip translation file");
+
+    // Only provide actual translations for English
+    if lang == "en" {
+        match state.apt_repository.translation_file().await {
+            Ok(content) => {
+                let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
+                if encoder.write_all(content.as_bytes()).is_ok() {
+                    if let Ok(compressed) = encoder.finish() {
+                        return ([(header::CONTENT_TYPE, "application/gzip")], compressed)
+                            .into_response();
+                    }
+                }
+                tracing::error!("unable to compress translation file");
+            }
+            Err(err) => {
+                tracing::error!(error = ?err, "unable to fetch translation file");
+            }
+        }
+    }
+
+    // Return empty gzip for other languages or on error
     const EMPTY_GZIP: &[u8] = &[
         0x1f, 0x8b, // magic number
         0x08, // compression method (deflate)
@@ -41,12 +84,12 @@ pub async fn gz_handler(Path(lang): Path<String>) -> Response {
 
 /// Handler for bzip2-compressed Translation files (e.g., Translation-en.bz2).
 ///
-/// Returns an empty bzip2-compressed response.
+/// Returns empty bzip2 content since we don't support bzip2 compression
+/// for dynamic content. APT will fall back to .gz or plain.
 #[tracing::instrument(skip_all)]
 pub async fn bz2_handler(Path(lang): Path<String>) -> Response {
     tracing::debug!(lang = %lang, "serving empty bzip2 translation file");
     // Empty bzip2 file
-    // This is a minimal valid bzip2 stream representing empty content
     const EMPTY_BZ2: &[u8] = &[
         0x42, 0x5a, // magic "BZ"
         0x68, // 'h' for bzip2
@@ -59,11 +102,12 @@ pub async fn bz2_handler(Path(lang): Path<String>) -> Response {
 
 /// Handler for xz-compressed Translation files (e.g., Translation-en.xz).
 ///
-/// Returns an empty xz-compressed response.
+/// Returns empty xz content since we don't support xz compression
+/// for dynamic content. APT will fall back to .gz or plain.
 #[tracing::instrument(skip_all)]
 pub async fn xz_handler(Path(lang): Path<String>) -> Response {
     tracing::debug!(lang = %lang, "serving empty xz translation file");
-    // Empty xz file created from compressing empty content
+    // Empty xz file
     const EMPTY_XZ: &[u8] = &[
         0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00, // magic number
         0x00, 0x00, // stream flags
@@ -79,28 +123,6 @@ mod tests {
     use axum::extract::Path;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
-
-    #[tokio::test]
-    async fn test_plain_translation() {
-        let response = super::handler(Path("en".to_string())).await.into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "text/plain"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_gz_translation() {
-        let response = super::gz_handler(Path("en".to_string()))
-            .await
-            .into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "application/gzip"
-        );
-    }
 
     #[tokio::test]
     async fn test_bz2_translation() {

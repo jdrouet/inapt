@@ -75,6 +75,7 @@ mod tests {
                     architectures: Vec::default(),
                     components: vec!["main".into()],
                     description: "Mirror to GitHub".into(),
+                    translation: Default::default(),
                 };
                 Box::pin(async move { Ok(Some(value)) })
             });
