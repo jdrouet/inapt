@@ -10,7 +10,7 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::{BatchSpanProcessor, SdkTracerProvider};
-use opentelemetry_semantic_conventions::attribute as semver;
+use opentelemetry_semantic_conventions::attribute as semconv;
 use tracing::level_filters::LevelFilter;
 use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -89,6 +89,10 @@ pub struct OtelConfig {
     endpoint: Cow<'static, str>,
     internal_level: Cow<'static, str>,
     environment: Cow<'static, str>,
+    /// Container ID, typically set via CONTAINER_ID env var
+    container_id: Option<String>,
+    /// Host name override, useful when running in containers where hostname is the container ID
+    host_name: Option<String>,
 }
 
 impl OtelConfig {
@@ -97,15 +101,68 @@ impl OtelConfig {
             endpoint: with_env_or("TRACING_OTEL_ENDPOINT", "http://localhost:4317"),
             internal_level: with_env_or("TRACING_OTEL_INTERNAL_LEVEL", "error"),
             environment: with_env_or("ENV", "local"),
+            container_id: std::env::var("CONTAINER_ID").ok(),
+            host_name: std::env::var("HOST_NAME").ok(),
         })
     }
 
-    fn attributes(&self) -> impl IntoIterator<Item = KeyValue> {
-        [
-            KeyValue::new(semver::SERVICE_NAME, env!("CARGO_PKG_NAME")),
-            KeyValue::new(semver::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            KeyValue::new("deployment.environment", self.environment.to_string()),
-        ]
+    fn attributes(&self) -> Vec<KeyValue> {
+        let mut attrs = vec![
+            // Service attributes
+            KeyValue::new(semconv::SERVICE_NAME, env!("CARGO_PKG_NAME")),
+            KeyValue::new(semconv::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            // Deployment attributes
+            KeyValue::new(
+                semconv::DEPLOYMENT_ENVIRONMENT_NAME,
+                self.environment.to_string(),
+            ),
+            // Process attributes
+            KeyValue::new(semconv::PROCESS_PID, std::process::id() as i64),
+        ];
+
+        // Process executable info
+        if let Ok(exe_path) = std::env::current_exe() {
+            attrs.push(KeyValue::new(
+                semconv::PROCESS_EXECUTABLE_PATH,
+                exe_path.to_string_lossy().into_owned(),
+            ));
+            if let Some(exe_name) = exe_path.file_name() {
+                attrs.push(KeyValue::new(
+                    semconv::PROCESS_EXECUTABLE_NAME,
+                    exe_name.to_string_lossy().into_owned(),
+                ));
+            }
+        }
+
+        // Process command arguments
+        let args: Vec<String> = std::env::args().collect();
+        if !args.is_empty() {
+            attrs.push(KeyValue::new(
+                semconv::PROCESS_COMMAND_ARGS,
+                format!("{:?}", args),
+            ));
+        }
+
+        // OS attributes
+        attrs.push(KeyValue::new(semconv::OS_TYPE, std::env::consts::OS));
+
+        // Host attributes - use HOST_NAME env var if set, otherwise use system hostname
+        let hostname = self.host_name.clone().or_else(|| {
+            hostname::get()
+                .ok()
+                .map(|h| h.to_string_lossy().into_owned())
+        });
+        if let Some(hostname) = hostname {
+            attrs.push(KeyValue::new(semconv::HOST_NAME, hostname));
+        }
+        attrs.push(KeyValue::new(semconv::HOST_ARCH, std::env::consts::ARCH));
+
+        // Container attributes - set when running in a container
+        if let Some(ref container_id) = self.container_id {
+            attrs.push(KeyValue::new(semconv::CONTAINER_ID, container_id.clone()));
+        }
+
+        attrs
     }
 
     fn resources(&self) -> Resource {

@@ -28,13 +28,14 @@ axum = { version = "0.8", default-features = false, features = ["http2", "tokio"
 chrono = { version = "0.4", default-features = false, features = ["now", "serde"] }
 flate2 = "1"     # for .gz
 futures = "0.3"
+hostname = "0.4"
 hex = "0.4"
 http = "1.4"
 md-5 = "0.10"
 opentelemetry = { version = "0.31", default-features = false }
 opentelemetry-appender-tracing = { version = "0.31", default-features = false }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "tls-roots"] }
-opentelemetry-semantic-conventions = { version = "0.31", default-features = false }
+opentelemetry-semantic-conventions = { version = "0.31", default-features = false, features = ["semconv_experimental"] }
 opentelemetry_sdk = { version = "0.31", default-features = false, features = ["logs", "metrics", "rt-tokio", "trace"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
 reqwest-middleware = { version = "0.5", features = ["query"] }
