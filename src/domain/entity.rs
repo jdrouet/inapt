@@ -1,5 +1,7 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
+use md5::Digest;
+
 /// Package
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Package {
@@ -89,6 +91,23 @@ pub struct PackageControl {
     pub others: HashMap<String, Vec<String>>,
 }
 
+impl PackageControl {
+    /// Returns the raw description text as it appears in the Packages file.
+    /// This is used to compute the Description-md5 for Translation files.
+    pub fn description_text(&self) -> String {
+        self.description.join("\n ")
+    }
+
+    /// Computes the MD5 hash of the description text.
+    /// This is used in Translation files to match descriptions with packages.
+    pub fn description_md5(&self) -> String {
+        let text = self.description_text();
+        // APT computes the MD5 of the description with a trailing newline
+        let hash = md5::Md5::digest(format!("{}\n", text).as_bytes());
+        hex::encode(hash)
+    }
+}
+
 /// Metadata extracted from a .deb file's control section.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileMetadata {
@@ -108,6 +127,9 @@ pub struct ReleaseMetadata {
     pub architectures: Vec<ArchitectureMetadata>,
     pub components: Vec<String>,
     pub description: Cow<'static, str>,
+    /// Translation file metadata (i18n/Translation-en)
+    #[serde(default)]
+    pub translation: TranslationMetadata,
 }
 
 impl ReleaseMetadata {
@@ -130,6 +152,7 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
         writeln!(f, "Acquire-By-Hash: yes")?;
         writeln!(f, "Description: {}", self.0.description)?;
         if !self.0.architectures.is_empty() {
+            let translation = &self.0.translation;
             f.write_str("\n")?;
             writeln!(f, "MD5Sum:")?;
             for arch in self.0.architectures.iter() {
@@ -144,6 +167,17 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
                     arch.compressed_md5, arch.compressed_size, arch.name
                 )?;
             }
+            // Include Translation-en in the Release file
+            writeln!(
+                f,
+                " {} {} main/i18n/Translation-en",
+                translation.plain_md5, translation.plain_size
+            )?;
+            writeln!(
+                f,
+                " {} {} main/i18n/Translation-en.gz",
+                translation.compressed_md5, translation.compressed_size
+            )?;
             f.write_str("\n")?;
             writeln!(f, "SHA256:")?;
             for arch in self.0.architectures.iter() {
@@ -158,6 +192,17 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
                     arch.compressed_sha256, arch.compressed_size, arch.name
                 )?;
             }
+            // Include Translation-en in the Release file
+            writeln!(
+                f,
+                " {} {} main/i18n/Translation-en",
+                translation.plain_sha256, translation.plain_size
+            )?;
+            writeln!(
+                f,
+                " {} {} main/i18n/Translation-en.gz",
+                translation.compressed_sha256, translation.compressed_size
+            )?;
         }
         Ok(())
     }
@@ -186,6 +231,33 @@ pub struct DebAsset {
     pub url: String,
     pub size: u64,
     pub sha256: Option<String>,
+}
+
+/// Metadata for Translation files (i18n).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct TranslationMetadata {
+    pub plain_md5: String,
+    pub plain_sha256: String,
+    pub plain_size: u64,
+    pub compressed_md5: String,
+    pub compressed_sha256: String,
+    pub compressed_size: u64,
+}
+
+/// Entry for a single package in a Translation file.
+#[derive(Debug, Clone)]
+pub struct TranslationEntry {
+    pub package: String,
+    pub description_md5: String,
+    pub description: Vec<String>,
+}
+
+impl std::fmt::Display for TranslationEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Package: {}", self.package)?;
+        writeln!(f, "Description-md5: {}", self.description_md5)?;
+        write_multiline(f, "Description-en", &self.description)
+    }
 }
 
 /// A GitHub release with its .deb assets for incremental processing.
