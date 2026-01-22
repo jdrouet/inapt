@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 
 use crate::domain::entity::{
     ArchitectureMetadata, DebAsset, FileMetadata, Package, PackageControl, PackageMetadata,
-    ReleaseMetadata,
+    ReleaseMetadata, TranslationEntry, TranslationMetadata,
 };
 
 // SQL query constants
@@ -350,6 +350,9 @@ impl SqliteStorage {
             .map_err(|e| anyhow::anyhow!("invalid date format in database: {e}"))?
             .with_timezone(&Utc);
 
+        // Compute translation metadata from architectures
+        let translation = Self::compute_translation_metadata(&architectures);
+
         Ok(Some(ReleaseMetadata {
             origin: Cow::Owned(release_row.origin),
             label: Cow::Owned(release_row.label),
@@ -360,6 +363,7 @@ impl SqliteStorage {
             architectures,
             components: serde_json::from_str(&release_row.components)?,
             description: Cow::Owned(release_row.description),
+            translation,
         }))
     }
 
@@ -445,6 +449,64 @@ impl SqliteStorage {
             .await?;
 
         Ok(release_id)
+    }
+
+    /// Compute translation metadata from architectures.
+    fn compute_translation_metadata(architectures: &[ArchitectureMetadata]) -> TranslationMetadata {
+        use flate2::write::GzEncoder;
+        use md5::Digest;
+        use std::collections::HashSet;
+        use std::io::Write;
+
+        // Collect unique packages by name (deduplicate across architectures)
+        let mut seen_packages: HashSet<String> = HashSet::new();
+        let mut entries = Vec::new();
+
+        for arch in architectures {
+            for package in &arch.packages {
+                let pkg_name = &package.metadata.control.package;
+                if seen_packages.insert(pkg_name.clone()) {
+                    entries.push(TranslationEntry {
+                        package: pkg_name.clone(),
+                        description_md5: package.metadata.control.description_md5(),
+                        description: package.metadata.control.description.clone(),
+                    });
+                }
+            }
+        }
+
+        // Sort entries by package name for consistent output
+        entries.sort_by(|a, b| a.package.cmp(&b.package));
+
+        // Build the translation file content
+        let content = entries
+            .into_iter()
+            .map(|entry| entry.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Compute hashes
+        let plain_md5 = hex::encode(md5::Md5::digest(content.as_bytes()));
+        let plain_sha256 = hex::encode(sha2::Sha256::digest(content.as_bytes()));
+        let plain_size = content.len() as u64;
+
+        // Compress and compute compressed hashes
+        let mut gz_encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let _ = gz_encoder.write_all(content.as_bytes());
+        let compressed = gz_encoder.finish().unwrap_or_default();
+
+        let compressed_md5 = hex::encode(md5::Md5::digest(&compressed));
+        let compressed_sha256 = hex::encode(sha2::Sha256::digest(&compressed));
+        let compressed_size = compressed.len() as u64;
+
+        TranslationMetadata {
+            plain_md5,
+            plain_sha256,
+            plain_size,
+            compressed_md5,
+            compressed_sha256,
+            compressed_size,
+        }
     }
 }
 
@@ -770,6 +832,7 @@ mod tests {
                 }],
                 components: vec!["main".to_string()],
                 description: "Test repo".into(),
+                translation: Default::default(),
             };
             storage.insert_release(metadata).await;
 
@@ -823,6 +886,7 @@ mod tests {
             architectures: vec![],
             components: vec!["main".to_string()],
             description: "First release".into(),
+            translation: Default::default(),
         };
         storage.insert_release(metadata1).await;
 
@@ -837,6 +901,7 @@ mod tests {
             architectures: vec![],
             components: vec!["main".to_string()],
             description: "Second release".into(),
+            translation: Default::default(),
         };
         storage.insert_release(metadata2).await;
 
