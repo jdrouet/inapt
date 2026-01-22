@@ -738,7 +738,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_release_tracking() {
+    async fn should_track_scanned_releases_when_marked() {
         use crate::domain::prelude::ReleaseIdentifier;
 
         let storage = create_test_storage().await;
@@ -786,7 +786,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_package_storage() {
+    async fn should_store_and_find_packages_when_inserted() {
         use crate::domain::prelude::ReleaseIdentifier;
 
         let storage = create_test_storage().await;
@@ -820,7 +820,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_all_packages() {
+    async fn should_list_all_packages_when_multiple_inserted() {
         use crate::domain::prelude::ReleaseIdentifier;
 
         let storage = create_test_storage().await;
@@ -858,7 +858,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_release_metadata_persistence() {
+    async fn should_persist_release_metadata_when_storage_reopened() {
         let temp_dir = temp_file::empty();
         let db_path = temp_dir.path().with_extension("db");
 
@@ -932,7 +932,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_release_metadata_history() {
+    async fn should_return_latest_release_when_multiple_inserted() {
         let storage = create_test_storage().await;
 
         // Insert first release
