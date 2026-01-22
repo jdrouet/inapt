@@ -89,6 +89,10 @@ pub struct OtelConfig {
     endpoint: Cow<'static, str>,
     internal_level: Cow<'static, str>,
     environment: Cow<'static, str>,
+    /// Container ID, typically set via CONTAINER_ID env var
+    container_id: Option<String>,
+    /// Host name override, useful when running in containers where hostname is the container ID
+    host_name: Option<String>,
 }
 
 impl OtelConfig {
@@ -97,6 +101,8 @@ impl OtelConfig {
             endpoint: with_env_or("TRACING_OTEL_ENDPOINT", "http://localhost:4317"),
             internal_level: with_env_or("TRACING_OTEL_INTERNAL_LEVEL", "error"),
             environment: with_env_or("ENV", "local"),
+            container_id: std::env::var("CONTAINER_ID").ok(),
+            host_name: std::env::var("HOST_NAME").ok(),
         })
     }
 
@@ -140,14 +146,21 @@ impl OtelConfig {
         // OS attributes
         attrs.push(KeyValue::new(semconv::OS_TYPE, std::env::consts::OS));
 
-        // Host attributes
-        if let Ok(hostname) = hostname::get() {
-            attrs.push(KeyValue::new(
-                semconv::HOST_NAME,
-                hostname.to_string_lossy().into_owned(),
-            ));
+        // Host attributes - use HOST_NAME env var if set, otherwise use system hostname
+        let hostname = self.host_name.clone().or_else(|| {
+            hostname::get()
+                .ok()
+                .map(|h| h.to_string_lossy().into_owned())
+        });
+        if let Some(hostname) = hostname {
+            attrs.push(KeyValue::new(semconv::HOST_NAME, hostname));
         }
         attrs.push(KeyValue::new(semconv::HOST_ARCH, std::env::consts::ARCH));
+
+        // Container attributes - set when running in a container
+        if let Some(ref container_id) = self.container_id {
+            attrs.push(KeyValue::new(semconv::CONTAINER_ID, container_id.clone()));
+        }
 
         attrs
     }
