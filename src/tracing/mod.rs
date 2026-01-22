@@ -10,7 +10,7 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::{BatchSpanProcessor, SdkTracerProvider};
-use opentelemetry_semantic_conventions::attribute as semver;
+use opentelemetry_semantic_conventions::attribute as semconv;
 use tracing::level_filters::LevelFilter;
 use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -100,12 +100,56 @@ impl OtelConfig {
         })
     }
 
-    fn attributes(&self) -> impl IntoIterator<Item = KeyValue> {
-        [
-            KeyValue::new(semver::SERVICE_NAME, env!("CARGO_PKG_NAME")),
-            KeyValue::new(semver::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            KeyValue::new("deployment.environment", self.environment.to_string()),
-        ]
+    fn attributes(&self) -> Vec<KeyValue> {
+        let mut attrs = vec![
+            // Service attributes
+            KeyValue::new(semconv::SERVICE_NAME, env!("CARGO_PKG_NAME")),
+            KeyValue::new(semconv::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            // Deployment attributes
+            KeyValue::new(
+                semconv::DEPLOYMENT_ENVIRONMENT_NAME,
+                self.environment.to_string(),
+            ),
+            // Process attributes
+            KeyValue::new(semconv::PROCESS_PID, std::process::id() as i64),
+        ];
+
+        // Process executable info
+        if let Ok(exe_path) = std::env::current_exe() {
+            attrs.push(KeyValue::new(
+                semconv::PROCESS_EXECUTABLE_PATH,
+                exe_path.to_string_lossy().into_owned(),
+            ));
+            if let Some(exe_name) = exe_path.file_name() {
+                attrs.push(KeyValue::new(
+                    semconv::PROCESS_EXECUTABLE_NAME,
+                    exe_name.to_string_lossy().into_owned(),
+                ));
+            }
+        }
+
+        // Process command arguments
+        let args: Vec<String> = std::env::args().collect();
+        if !args.is_empty() {
+            attrs.push(KeyValue::new(
+                semconv::PROCESS_COMMAND_ARGS,
+                format!("{:?}", args),
+            ));
+        }
+
+        // OS attributes
+        attrs.push(KeyValue::new(semconv::OS_TYPE, std::env::consts::OS));
+
+        // Host attributes
+        if let Ok(hostname) = hostname::get() {
+            attrs.push(KeyValue::new(
+                semconv::HOST_NAME,
+                hostname.to_string_lossy().into_owned(),
+            ));
+        }
+        attrs.push(KeyValue::new(semconv::HOST_ARCH, std::env::consts::ARCH));
+
+        attrs
     }
 
     fn resources(&self) -> Resource {
