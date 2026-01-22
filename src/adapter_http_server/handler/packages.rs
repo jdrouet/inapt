@@ -76,14 +76,14 @@ mod tests {
     use crate::{adapter_http_server::ServerState, domain::prelude::MockAptRepositoryService};
 
     #[tokio::test]
-    async fn should_list_packages() {
+    async fn should_list_packages_when_requested() {
         let mut apt_repository = MockAptRepositoryService::new();
         apt_repository
             .expect_packages_file()
             .once()
             .return_once(|arch| {
                 assert_eq!(arch, "amd64");
-                Box::pin(async { Ok(String::new()) })
+                Box::pin(async { Ok(String::from("Package: test\nVersion: 1.0.0")) })
             });
         let res = super::handler(
             State(ServerState { apt_repository }),
@@ -91,6 +91,58 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(res, "");
+        assert_eq!(res, "Package: test\nVersion: 1.0.0");
+    }
+
+    #[tokio::test]
+    async fn should_return_error_when_packages_fetch_fails() {
+        let mut apt_repository = MockAptRepositoryService::new();
+        apt_repository
+            .expect_packages_file()
+            .once()
+            .return_once(|_| Box::pin(async { Err(anyhow::anyhow!("fetch error")) }));
+        let res = super::handler(
+            State(ServerState { apt_repository }),
+            Path(String::from("amd64")),
+        )
+        .await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn should_return_compressed_packages_when_gz_requested() {
+        let mut apt_repository = MockAptRepositoryService::new();
+        apt_repository
+            .expect_packages_file()
+            .once()
+            .return_once(|arch| {
+                assert_eq!(arch, "amd64");
+                Box::pin(async { Ok(String::from("Package: test\nVersion: 1.0.0")) })
+            });
+        let res = super::gz_handler(
+            State(ServerState { apt_repository }),
+            Path(String::from("amd64")),
+        )
+        .await
+        .unwrap();
+        // Check that result is gzip compressed (starts with gzip magic bytes)
+        assert!(res.len() > 2);
+        assert_eq!(res[0], 0x1f);
+        assert_eq!(res[1], 0x8b);
+    }
+
+    #[tokio::test]
+    async fn should_return_error_when_gz_packages_fetch_fails() {
+        let mut apt_repository = MockAptRepositoryService::new();
+        apt_repository
+            .expect_packages_file()
+            .once()
+            .return_once(|_| Box::pin(async { Err(anyhow::anyhow!("fetch error")) }));
+        let res = super::gz_handler(
+            State(ServerState { apt_repository }),
+            Path(String::from("amd64")),
+        )
+        .await;
+        assert!(res.is_err());
     }
 }
