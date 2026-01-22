@@ -145,7 +145,92 @@ echo "deb [trusted=yes] http://localhost:3000 stable main" | \
 | `TRACING_LEVEL` | Log level filter | `info` |
 | `TRACING_CONSOLE_COLOR` | Enable colored output | `true` |
 | `TRACING_OTEL_ENDPOINT` | OTLP gRPC endpoint | `http://localhost:4317` |
-| `ENV` | Deployment environment | |
+| `TRACING_OTEL_INTERNAL_LEVEL` | Log level for OpenTelemetry internals | `error` |
+| `ENV` | Deployment environment name | `local` |
+| `HOST_NAME` | Override system hostname (useful in containers) | System hostname |
+| `CONTAINER_ID` | Container ID for container environments | |
+
+#### OpenTelemetry Resource Attributes
+
+When `TRACING_MODE=otel`, the following [OpenTelemetry semantic convention](https://opentelemetry.io/docs/specs/semconv/resource/) resource attributes are automatically set:
+
+| Attribute | Source |
+|-----------|--------|
+| `service.name` | Package name (`inapt`) |
+| `service.version` | Package version |
+| `deployment.environment.name` | `ENV` environment variable |
+| `telemetry.sdk.name` | `opentelemetry` |
+| `telemetry.sdk.language` | `rust` |
+| `telemetry.sdk.version` | SDK version |
+| `process.pid` | Current process ID |
+| `process.executable.path` | Full path to executable |
+| `process.executable.name` | Executable filename |
+| `process.command_args` | Command line arguments |
+| `os.type` | Operating system type |
+| `host.name` | `HOST_NAME` env var or system hostname |
+| `host.arch` | CPU architecture |
+| `container.id` | `CONTAINER_ID` env var (if set) |
+
+#### Example: Console Tracing (Development)
+
+```bash
+TRACING_MODE=console TRACING_LEVEL=debug cargo run
+```
+
+#### Example: OpenTelemetry with Jaeger
+
+```bash
+# Start Jaeger
+docker run -d --name jaeger \
+  -p 4317:4317 \
+  -p 16686:16686 \
+  jaegertracing/all-in-one:latest
+
+# Run inapt with OTLP export
+TRACING_MODE=otel \
+TRACING_OTEL_ENDPOINT=http://localhost:4317 \
+ENV=development \
+cargo run
+
+# View traces at http://localhost:16686
+```
+
+#### Example: Docker/Kubernetes with Container Attributes
+
+```yaml
+# docker-compose.yml
+services:
+  inapt:
+    image: inapt:latest
+    environment:
+      - TRACING_MODE=otel
+      - TRACING_OTEL_ENDPOINT=http://otel-collector:4317
+      - ENV=production
+      - CONTAINER_ID=${HOSTNAME}  # Docker sets HOSTNAME to container ID
+      - HOST_NAME=apt.example.com  # Real hostname for identification
+```
+
+```yaml
+# Kubernetes deployment
+spec:
+  containers:
+    - name: inapt
+      env:
+        - name: TRACING_MODE
+          value: "otel"
+        - name: TRACING_OTEL_ENDPOINT
+          value: "http://otel-collector.monitoring:4317"
+        - name: ENV
+          value: "production"
+        - name: CONTAINER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: HOST_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+```
 
 ## Docker
 
