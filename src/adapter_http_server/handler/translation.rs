@@ -53,11 +53,11 @@ where
         match state.apt_repository.translation_file().await {
             Ok(content) => {
                 let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
-                if encoder.write_all(content.as_bytes()).is_ok() {
-                    if let Ok(compressed) = encoder.finish() {
-                        return ([(header::CONTENT_TYPE, "application/gzip")], compressed)
-                            .into_response();
-                    }
+                if encoder.write_all(content.as_bytes()).is_ok()
+                    && let Ok(compressed) = encoder.finish()
+                {
+                    return ([(header::CONTENT_TYPE, "application/gzip")], compressed)
+                        .into_response();
                 }
                 tracing::error!("unable to compress translation file");
             }
