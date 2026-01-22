@@ -39,6 +39,10 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
         }
     }
 
+    /// Get the Translation-en file content.
+    /// Returns the translation entries for all unique packages across all architectures.
+    fn translation_file(&self) -> impl Future<Output = anyhow::Result<String>> + Send;
+
     /// Get the package for a given package name and filename
     fn package(
         &self,
@@ -89,6 +93,9 @@ mockall::mock! {
 
         /// Get the Packages file content for a given architecture.
         fn packages_file(&self, arch: &str) -> impl Future<Output = anyhow::Result<String>> + Send;
+
+        /// Get the Translation-en file content.
+        fn translation_file(&self) -> impl Future<Output = anyhow::Result<String>> + Send;
 
         /// Get the package for a given package name and filename
         fn package(
