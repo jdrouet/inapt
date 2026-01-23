@@ -2,6 +2,11 @@
 //!
 //! These tests verify that a real APT client (apt-get) can successfully
 //! interact with the inapt repository server.
+//!
+//! These tests require Docker and are only compiled when the `e2e-docker` feature is enabled.
+//! Run with: `cargo test --features e2e-docker`
+
+#![cfg(feature = "e2e-docker")]
 
 use anyhow::{Context, Result, bail};
 use bollard::models::{ContainerCreateBody, HostConfig, NetworkCreateRequest};
@@ -13,6 +18,7 @@ use bollard::{Docker, body_full};
 use bytes::Bytes;
 use futures::StreamExt;
 use std::time::Duration;
+use walkdir::WalkDir;
 
 const DEBIAN_IMAGE: &str = "debian:bookworm";
 
@@ -108,7 +114,7 @@ fn add_dir_to_tar(
 ) -> Result<()> {
     let full_dir = base_path.join(relative_dir);
 
-    for entry in walkdir(full_dir.as_path(), relative_dir)? {
+    for entry in walk_directory(full_dir.as_path(), relative_dir)? {
         let (rel_path, content, is_dir) = entry;
         let mut header = tar::Header::new_gnu();
         header.set_path(&rel_path)?;
@@ -130,25 +136,24 @@ fn add_dir_to_tar(
     Ok(())
 }
 
-fn walkdir(path: &std::path::Path, prefix: &str) -> Result<Vec<(String, Vec<u8>, bool)>> {
+fn walk_directory(path: &std::path::Path, prefix: &str) -> Result<Vec<(String, Vec<u8>, bool)>> {
     let mut results = Vec::new();
 
-    if path.is_dir() {
-        // Add the directory itself
-        results.push((format!("{}/", prefix), Vec::new(), true));
+    for entry in WalkDir::new(path) {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let rel_path = entry_path.strip_prefix(path)?;
+        let full_rel_path = if rel_path.as_os_str().is_empty() {
+            prefix.to_string()
+        } else {
+            format!("{}/{}", prefix, rel_path.to_string_lossy())
+        };
 
-        for entry in std::fs::read_dir(path)? {
-            let entry = entry?;
-            let entry_path = entry.path();
-            let file_name = entry.file_name();
-            let rel_path = format!("{}/{}", prefix, file_name.to_string_lossy());
-
-            if entry_path.is_dir() {
-                results.extend(walkdir(&entry_path, &rel_path)?);
-            } else {
-                let content = std::fs::read(&entry_path)?;
-                results.push((rel_path, content, false));
-            }
+        if entry_path.is_dir() {
+            results.push((format!("{}/", full_rel_path), Vec::new(), true));
+        } else {
+            let content = std::fs::read(entry_path)?;
+            results.push((full_rel_path, content, false));
         }
     }
 
@@ -229,17 +234,29 @@ async fn setup_network(docker: &Docker, test_name: &str) -> Result<String> {
         ..Default::default()
     };
 
-    let response = docker
+    docker
         .create_network(network_config)
         .await
         .context("Failed to create Docker network")?;
-    Ok(response.id)
+
+    // Wait a moment for the network to be fully ready
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Debug: verify network was created
+    let network_info = docker.inspect_network(&network_name, None).await?;
+    println!(
+        "Created network {} with ID {:?}",
+        network_name, network_info.id
+    );
+
+    // Return the network name for DNS resolution (not the ID)
+    Ok(network_name)
 }
 
 /// Start the inapt container
 async fn start_inapt_container(
     docker: &Docker,
-    network_id: &str,
+    network_name: &str,
     test_name: &str,
 ) -> Result<String> {
     let project_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -278,13 +295,13 @@ async fn start_inapt_container(
                 public_key_path.to_string_lossy()
             ),
         ]),
-        network_mode: Some(network_id.to_string()),
+        network_mode: Some(network_name.to_string()),
         ..Default::default()
     };
 
     let config = ContainerCreateBody {
         image: Some(INAPT_IMAGE_NAME.to_string()),
-        hostname: Some("inapt-server".to_string()),
+        hostname: Some(container_name.clone()),
         env: Some(vec!["CONFIG_PATH=/app/config.toml".to_string()]),
         host_config: Some(host_config),
         ..Default::default()
@@ -305,6 +322,16 @@ async fn start_inapt_container(
         .await
         .context("Failed to start inapt container")?;
 
+    // Debug: inspect container to verify network
+    let container_info = docker.inspect_container(&container.id, None).await?;
+    println!(
+        "Server container networks: {:?}",
+        container_info
+            .network_settings
+            .as_ref()
+            .and_then(|ns| ns.networks.as_ref())
+    );
+
     // Wait for the server to be ready
     tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -317,7 +344,7 @@ async fn start_inapt_container(
 /// Run apt-get update in a Debian container and verify it works
 async fn run_apt_client_test(
     docker: &Docker,
-    network_id: &str,
+    network_name: &str,
     inapt_hostname: &str,
     test_name: &str,
 ) -> Result<()> {
@@ -335,7 +362,7 @@ async fn run_apt_client_test(
         .await;
 
     let host_config = HostConfig {
-        network_mode: Some(network_id.to_string()),
+        network_mode: Some(network_name.to_string()),
         ..Default::default()
     };
 
@@ -511,7 +538,6 @@ async fn cleanup(
 }
 
 #[tokio::test]
-#[ignore = "requires Docker"]
 async fn test_apt_get_update_against_inapt_repository() {
     let docker = Docker::connect_with_local_defaults().expect("Failed to connect to Docker");
     let test_name = "apt-update";
@@ -559,7 +585,6 @@ async fn test_apt_get_update_against_inapt_repository() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker"]
 async fn test_apt_get_update_with_by_hash() {
     let docker = Docker::connect_with_local_defaults().expect("Failed to connect to Docker");
     let test_name = "by-hash";
@@ -585,6 +610,41 @@ async fn test_apt_get_update_with_by_hash() {
         println!("Waiting for inapt to sync packages from GitHub...");
         tokio::time::sleep(Duration::from_secs(30)).await;
 
+        // Check if server is still running
+        let server_info = docker.inspect_container(&container_id, None).await?;
+        let is_running = server_info
+            .state
+            .as_ref()
+            .and_then(|s| s.running)
+            .unwrap_or(false);
+        let exit_code = server_info.state.as_ref().and_then(|s| s.exit_code);
+        println!(
+            "Server container running: {}, exit_code: {:?}",
+            is_running, exit_code
+        );
+
+        // Always get logs
+        let log_options = LogsOptions {
+            stdout: true,
+            stderr: true,
+            ..Default::default()
+        };
+        let mut logs_stream = docker.logs(&container_id, Some(log_options));
+        let mut logs = String::new();
+        while let Some(result) = logs_stream.next().await {
+            if let Ok(output) = result {
+                logs.push_str(&output.to_string());
+            }
+        }
+        println!("Server logs:\n{}", logs);
+
+        if !is_running {
+            bail!(
+                "Server container stopped unexpectedly with exit code {:?}",
+                exit_code
+            );
+        }
+
         // Run a test that specifically checks by-hash is being used
         run_by_hash_verification_test(&docker, &net_id, &server_hostname, test_name).await?;
 
@@ -606,7 +666,7 @@ async fn test_apt_get_update_with_by_hash() {
 /// Run a test that verifies by-hash is advertised in the Release file
 async fn run_by_hash_verification_test(
     docker: &Docker,
-    network_id: &str,
+    network_name: &str,
     inapt_hostname: &str,
     test_name: &str,
 ) -> Result<()> {
@@ -624,7 +684,7 @@ async fn run_by_hash_verification_test(
         .await;
 
     let host_config = HostConfig {
-        network_mode: Some(network_id.to_string()),
+        network_mode: Some(network_name.to_string()),
         ..Default::default()
     };
 
@@ -639,9 +699,29 @@ echo "=== Starting by-hash verification test ==="
 apt-get update -qq
 apt-get install -y -qq curl ca-certificates
 
+# Debug: check DNS resolution and connectivity
+echo "Checking DNS for {}..."
+getent hosts {} || echo "WARNING: DNS lookup failed for {}"
+
+echo "Network info:"
+cat /etc/resolv.conf
+
+# Try direct DNS query
+apt-get install -y -qq dnsutils 2>/dev/null || true
+nslookup {} 127.0.0.11 2>&1 || echo "nslookup failed"
+
+# Try with the server's IP directly by checking /etc/hosts alternative
+echo "Checking hosts file:"
+cat /etc/hosts
+
 # Fetch the Release file and check for Acquire-By-Hash
-echo "Fetching Release file..."
-RELEASE_CONTENT=$(curl -s http://{}:3000/dists/stable/Release)
+echo "Fetching Release file from http://{}:3000/dists/stable/Release ..."
+RELEASE_CONTENT=$(curl -sf http://{}:3000/dists/stable/Release) || {{
+    echo "ERROR: curl failed with exit code $?"
+    echo "Trying with verbose output..."
+    curl -v http://{}:3000/dists/stable/Release 2>&1 || true
+    exit 1
+}}
 
 echo "Release file content:"
 echo "$RELEASE_CONTENT"
@@ -677,7 +757,14 @@ fi
 
 echo "=== By-hash verification test completed ==="
 "#,
-        inapt_hostname, inapt_hostname
+        inapt_hostname,
+        inapt_hostname,
+        inapt_hostname,
+        inapt_hostname,
+        inapt_hostname,
+        inapt_hostname,
+        inapt_hostname,
+        inapt_hostname
     );
 
     let config = ContainerCreateBody {
@@ -706,6 +793,32 @@ echo "=== By-hash verification test completed ==="
         .start_container(&container.id, None::<StartContainerOptions>)
         .await
         .context("Failed to start by-hash verification container")?;
+
+    // Debug: inspect client container to verify network
+    let client_info = docker.inspect_container(&container.id, None).await?;
+    println!(
+        "Client container networks: {:?}",
+        client_info
+            .network_settings
+            .as_ref()
+            .and_then(|ns| ns.networks.as_ref())
+    );
+
+    // Debug: check network state to verify both containers are connected
+    let network_state = docker.inspect_network(network_name, None).await?;
+    println!(
+        "Network {} has {} containers: {:?}",
+        network_name,
+        network_state
+            .containers
+            .as_ref()
+            .map(|c| c.len())
+            .unwrap_or(0),
+        network_state
+            .containers
+            .as_ref()
+            .map(|c| c.keys().collect::<Vec<_>>())
+    );
 
     // Wait for completion
     let mut wait_stream = docker.wait_container(
