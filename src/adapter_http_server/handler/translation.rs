@@ -144,7 +144,7 @@ mod tests {
     use crate::{adapter_http_server::ServerState, domain::prelude::MockAptRepositoryService};
 
     #[test]
-    fn test_parse_translation_filename() {
+    fn should_parse_translation_filename() {
         assert_eq!(
             parse_translation_filename("Translation-en"),
             Some(("en", Compression::None))

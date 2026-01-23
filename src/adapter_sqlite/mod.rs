@@ -346,7 +346,7 @@ impl SqliteStorage {
             .collect();
 
         let date = chrono::DateTime::parse_from_rfc3339(&release_row.date)
-            .map_err(|e| anyhow::anyhow!("invalid date format in database: {e}"))?
+            .map_err(|err| anyhow::anyhow!("invalid date format in database: {err}"))?
             .with_timezone(&Utc);
 
         // Compute translation metadata from architectures
