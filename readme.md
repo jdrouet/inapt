@@ -298,7 +298,7 @@ cargo llvm-cov
 
 ### High Priority
 
-- [ ] Health check endpoint (`/health`) for load balancers and Kubernetes probes
+- [x] Health check endpoint (`/health`) for load balancers and Kubernetes probes
 - [ ] Public key endpoint (`/public-key.asc`) to serve GPG key directly
 - [ ] ETag/If-None-Match caching against GitHub API for reduced API calls
 
