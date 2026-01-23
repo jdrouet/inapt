@@ -42,18 +42,17 @@ const SQL_INSERT_RELEASE_METADATA: &str = r#"
 
 const SQL_INSERT_ARCHITECTURE_METADATA: &str = "INSERT INTO architecture_metadata (release_metadata_id, name, plain_md5, plain_sha256, plain_size, compressed_md5, compressed_sha256, compressed_size) ";
 
-const SQL_SELECT_GITHUB_RELEASE: &str =
-    "SELECT id FROM github_releases WHERE repo_owner = ? AND repo_name = ? AND id = ?";
+const SQL_SELECT_GITHUB_RELEASES_BATCH: &str = "SELECT id FROM github_releases WHERE ";
 
-const SQL_INSERT_GITHUB_RELEASE: &str = "INSERT OR IGNORE INTO github_releases (id, repo_owner, repo_name, scanned_at) VALUES (?, ?, ?, ?)";
+const SQL_INSERT_GITHUB_RELEASES_BATCH: &str =
+    "INSERT OR IGNORE INTO github_releases (id, repo_owner, repo_name, scanned_at) ";
 
-const SQL_INSERT_DEB_ASSET: &str = r#"
+const SQL_INSERT_DEB_ASSETS_BATCH: &str = r#"
     INSERT OR REPLACE INTO deb_assets (
         id, release_id, repo_owner, repo_name, filename, url, size, sha256,
         pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
         pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"#;
+    ) "#;
 
 const SQL_SELECT_DEB_ASSET_BY_ID: &str = r#"
     SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
@@ -512,54 +511,74 @@ impl SqliteStorage {
 
 impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
     #[tracing::instrument(
-        skip(self),
+        skip(self, releases),
         fields(
             db.system = "sqlite",
-            db.statement = SQL_SELECT_GITHUB_RELEASE,
+            db.statement = SQL_SELECT_GITHUB_RELEASES_BATCH,
             span.type = "sql",
-            otel.kind = "client"
+            otel.kind = "client",
+            releases.count = releases.len()
         )
     )]
-    async fn is_release_scanned(
+    async fn filter_scanned_releases(
         &self,
-        repo_owner: &str,
-        repo_name: &str,
-        release_id: u64,
-    ) -> anyhow::Result<bool> {
-        let result: Option<(i64,)> = sqlx::query_as(SQL_SELECT_GITHUB_RELEASE)
-            .bind(repo_owner)
-            .bind(repo_name)
-            .bind(release_id as i64)
-            .fetch_optional(&self.pool)
-            .await?;
+        releases: &[crate::domain::prelude::ReleaseIdentifier],
+    ) -> anyhow::Result<std::collections::HashSet<u64>> {
+        if releases.is_empty() {
+            return Ok(std::collections::HashSet::new());
+        }
 
-        Ok(result.is_some())
+        // Build a query with OR conditions for each release
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_SELECT_GITHUB_RELEASES_BATCH);
+
+        for (i, release) in releases.iter().enumerate() {
+            if i > 0 {
+                query_builder.push(" OR ");
+            }
+            query_builder.push("(repo_owner = ");
+            query_builder.push_bind(&release.repo_owner);
+            query_builder.push(" AND repo_name = ");
+            query_builder.push_bind(&release.repo_name);
+            query_builder.push(" AND id = ");
+            query_builder.push_bind(release.release_id as i64);
+            query_builder.push(")");
+        }
+
+        let rows: Vec<(i64,)> = query_builder.build_query_as().fetch_all(&self.pool).await?;
+
+        Ok(rows.into_iter().map(|(id,)| id as u64).collect())
     }
 
     #[tracing::instrument(
-        skip(self),
+        skip(self, releases),
         fields(
             db.system = "sqlite",
-            db.statement = SQL_INSERT_GITHUB_RELEASE,
+            db.statement = SQL_INSERT_GITHUB_RELEASES_BATCH,
             span.type = "sql",
-            otel.kind = "client"
+            otel.kind = "client",
+            releases.count = releases.len()
         )
     )]
-    async fn mark_release_scanned(
+    async fn mark_releases_scanned(
         &self,
-        repo_owner: &str,
-        repo_name: &str,
-        release_id: u64,
+        releases: &[crate::domain::prelude::ReleaseIdentifier],
     ) -> anyhow::Result<()> {
+        if releases.is_empty() {
+            return Ok(());
+        }
+
         let now = Utc::now().to_rfc3339();
 
-        sqlx::query(SQL_INSERT_GITHUB_RELEASE)
-            .bind(release_id as i64)
-            .bind(repo_owner)
-            .bind(repo_name)
-            .bind(now)
-            .execute(&self.pool)
-            .await?;
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_INSERT_GITHUB_RELEASES_BATCH);
+
+        query_builder.push_values(releases, |mut b, release| {
+            b.push_bind(release.release_id as i64)
+                .push_bind(&release.repo_owner)
+                .push_bind(&release.repo_name)
+                .push_bind(&now);
+        });
+
+        query_builder.build().execute(&self.pool).await?;
 
         Ok(())
     }
@@ -567,40 +586,49 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
 
 impl crate::domain::prelude::PackageStore for SqliteStorage {
     #[tracing::instrument(
-        skip(self, package),
+        skip(self, packages),
         fields(
             db.system = "sqlite",
-            db.statement = SQL_INSERT_DEB_ASSET,
+            db.statement = SQL_INSERT_DEB_ASSETS_BATCH,
             span.type = "sql",
             otel.kind = "client",
-            asset_id = package.asset.asset_id
+            packages.count = packages.len()
         )
     )]
-    async fn insert_package(&self, package: &Package) -> anyhow::Result<()> {
-        let description_json = serde_json::to_string(&package.metadata.control.description)?;
-        let others_json = serde_json::to_string(&package.metadata.control.others)?;
+    async fn insert_packages(&self, packages: &[Package]) -> anyhow::Result<()> {
+        if packages.is_empty() {
+            return Ok(());
+        }
 
-        sqlx::query(SQL_INSERT_DEB_ASSET)
-            .bind(package.asset.asset_id as i64)
-            .bind(package.asset.release_id as i64)
-            .bind(&package.asset.repo_owner)
-            .bind(&package.asset.repo_name)
-            .bind(&package.asset.filename)
-            .bind(&package.asset.url)
-            .bind(package.asset.size as i64)
-            .bind(&package.asset.sha256)
-            .bind(&package.metadata.control.package)
-            .bind(&package.metadata.control.version)
-            .bind(&package.metadata.control.section)
-            .bind(&package.metadata.control.priority)
-            .bind(&package.metadata.control.architecture)
-            .bind(&package.metadata.control.maintainer)
-            .bind(&description_json)
-            .bind(&others_json)
-            .bind(package.metadata.file.size as i64)
-            .bind(&package.metadata.file.sha256)
-            .execute(&self.pool)
-            .await?;
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_INSERT_DEB_ASSETS_BATCH);
+
+        query_builder.push_values(packages, |mut b, package| {
+            let description_json =
+                serde_json::to_string(&package.metadata.control.description).unwrap_or_default();
+            let others_json =
+                serde_json::to_string(&package.metadata.control.others).unwrap_or_default();
+
+            b.push_bind(package.asset.asset_id as i64)
+                .push_bind(package.asset.release_id as i64)
+                .push_bind(&package.asset.repo_owner)
+                .push_bind(&package.asset.repo_name)
+                .push_bind(&package.asset.filename)
+                .push_bind(&package.asset.url)
+                .push_bind(package.asset.size as i64)
+                .push_bind(&package.asset.sha256)
+                .push_bind(&package.metadata.control.package)
+                .push_bind(&package.metadata.control.version)
+                .push_bind(&package.metadata.control.section)
+                .push_bind(&package.metadata.control.priority)
+                .push_bind(&package.metadata.control.architecture)
+                .push_bind(&package.metadata.control.maintainer)
+                .push_bind(description_json)
+                .push_bind(others_json)
+                .push_bind(package.metadata.file.size as i64)
+                .push_bind(&package.metadata.file.sha256);
+        });
+
+        query_builder.build().execute(&self.pool).await?;
 
         self.invalidate_cache().await;
         Ok(())
@@ -710,51 +738,73 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_release_tracking() {
+    async fn should_track_scanned_releases_when_marked() {
+        use crate::domain::prelude::ReleaseIdentifier;
+
         let storage = create_test_storage().await;
 
-        // Release should not be scanned initially
-        let is_scanned = storage
-            .is_release_scanned("owner", "repo", 123)
-            .await
-            .unwrap();
-        assert!(!is_scanned);
+        let releases = vec![
+            ReleaseIdentifier {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 123,
+            },
+            ReleaseIdentifier {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 456,
+            },
+        ];
 
-        // Mark as scanned
+        // Releases should not be scanned initially
+        let scanned = storage.filter_scanned_releases(&releases).await.unwrap();
+        assert!(scanned.is_empty());
+
+        // Mark release 123 as scanned
         storage
-            .mark_release_scanned("owner", "repo", 123)
+            .mark_releases_scanned(&[releases[0].clone()])
             .await
             .unwrap();
 
-        // Should now be scanned
-        let is_scanned = storage
-            .is_release_scanned("owner", "repo", 123)
-            .await
-            .unwrap();
-        assert!(is_scanned);
+        // Release 123 should now be scanned, 456 should not
+        let scanned = storage.filter_scanned_releases(&releases).await.unwrap();
+        assert_eq!(scanned.len(), 1);
+        assert!(scanned.contains(&123));
+        assert!(!scanned.contains(&456));
 
-        // Different release should not be scanned
-        let is_scanned = storage
-            .is_release_scanned("owner", "repo", 456)
+        // Mark release 456 as scanned too
+        storage
+            .mark_releases_scanned(&[releases[1].clone()])
             .await
             .unwrap();
-        assert!(!is_scanned);
+
+        // Both should now be scanned
+        let scanned = storage.filter_scanned_releases(&releases).await.unwrap();
+        assert_eq!(scanned.len(), 2);
+        assert!(scanned.contains(&123));
+        assert!(scanned.contains(&456));
     }
 
     #[tokio::test]
-    async fn test_package_storage() {
+    async fn should_store_and_find_packages_when_inserted() {
+        use crate::domain::prelude::ReleaseIdentifier;
+
         let storage = create_test_storage().await;
 
         // First mark the release as scanned (creates the release record)
         storage
-            .mark_release_scanned("owner", "repo", 1)
+            .mark_releases_scanned(&[ReleaseIdentifier {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 1,
+            }])
             .await
             .unwrap();
 
         let package = create_test_package(100, 1);
 
         // Insert package
-        storage.insert_package(&package).await.unwrap();
+        storage.insert_packages(&[package]).await.unwrap();
 
         // Find by asset_id
         let found = storage.find_package_by_asset_id(100).await;
@@ -770,27 +820,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_all_packages() {
+    async fn should_list_all_packages_when_multiple_inserted() {
+        use crate::domain::prelude::ReleaseIdentifier;
+
         let storage = create_test_storage().await;
 
         // First mark the releases as scanned (creates the release records)
         storage
-            .mark_release_scanned("owner", "repo", 1)
-            .await
-            .unwrap();
-        storage
-            .mark_release_scanned("owner", "repo", 2)
+            .mark_releases_scanned(&[
+                ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 1,
+                },
+                ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 2,
+                },
+            ])
             .await
             .unwrap();
 
-        // Insert multiple packages
+        // Insert multiple packages in batch
         let package1 = create_test_package(100, 1);
         let package2 = create_test_package(101, 1);
         let package3 = create_test_package(102, 2);
 
-        storage.insert_package(&package1).await.unwrap();
-        storage.insert_package(&package2).await.unwrap();
-        storage.insert_package(&package3).await.unwrap();
+        storage
+            .insert_packages(&[package1, package2, package3])
+            .await
+            .unwrap();
 
         // List all
         let packages = storage.list_all_packages().await.unwrap();
@@ -798,7 +858,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_release_metadata_persistence() {
+    async fn should_persist_release_metadata_when_storage_reopened() {
         let temp_dir = temp_file::empty();
         let db_path = temp_dir.path().with_extension("db");
 
@@ -872,7 +932,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_release_metadata_history() {
+    async fn should_return_latest_release_when_multiple_inserted() {
         let storage = create_test_storage().await;
 
         // Insert first release

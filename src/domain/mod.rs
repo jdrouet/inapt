@@ -242,37 +242,78 @@ where
             .stream_releases_with_assets(repo)
             .await?;
 
-        for release in releases {
-            // Skip already-scanned releases
-            if self
-                .release_tracker
-                .is_release_scanned(&release.repo_owner, &release.repo_name, release.release_id)
-                .await?
-            {
-                tracing::debug!(
-                    release_id = release.release_id,
-                    "release already scanned, skipping"
-                );
-                continue;
-            }
+        if releases.is_empty() {
+            return Ok(());
+        }
 
-            // Process new release
+        // Collect all release identifiers for batch filtering
+        let release_identifiers: Vec<prelude::ReleaseIdentifier> = releases
+            .iter()
+            .map(|r| prelude::ReleaseIdentifier {
+                repo_owner: r.repo_owner.clone(),
+                repo_name: r.repo_name.clone(),
+                release_id: r.release_id,
+            })
+            .collect();
+
+        // Batch query: find which releases are already scanned
+        let scanned_release_ids = self
+            .release_tracker
+            .filter_scanned_releases(&release_identifiers)
+            .await?;
+
+        // Filter to only unscanned releases
+        let unscanned_releases: Vec<_> = releases
+            .into_iter()
+            .filter(|r| !scanned_release_ids.contains(&r.release_id))
+            .collect();
+
+        if unscanned_releases.is_empty() {
+            tracing::debug!("all releases already scanned, nothing to do");
+            return Ok(());
+        }
+
+        tracing::info!(
+            unscanned_count = unscanned_releases.len(),
+            "processing unscanned releases"
+        );
+
+        // Collect identifiers for releases we're about to process
+        let releases_to_mark: Vec<prelude::ReleaseIdentifier> = unscanned_releases
+            .iter()
+            .map(|r| prelude::ReleaseIdentifier {
+                repo_owner: r.repo_owner.clone(),
+                repo_name: r.repo_name.clone(),
+                release_id: r.release_id,
+            })
+            .collect();
+
+        // Mark releases as scanned first (required for foreign key constraint on packages)
+        self.release_tracker
+            .mark_releases_scanned(&releases_to_mark)
+            .await?;
+
+        // Process all assets and collect packages
+        let mut packages_to_insert = Vec::new();
+        for release in unscanned_releases {
             tracing::info!(
                 release_id = release.release_id,
                 assets = release.assets.len(),
-                "processing new release"
+                "processing release"
             );
-
-            // Mark release as scanned first (required for foreign key constraint on packages)
-            self.release_tracker
-                .mark_release_scanned(&release.repo_owner, &release.repo_name, release.release_id)
-                .await?;
 
             for asset in release.assets {
                 if let Some(package) = self.handle_package(asset).await? {
-                    self.package_store.insert_package(&package).await?;
+                    packages_to_insert.push(package);
                 }
             }
+        }
+
+        // Batch insert all packages
+        if !packages_to_insert.is_empty() {
+            self.package_store
+                .insert_packages(&packages_to_insert)
+                .await?;
         }
 
         Ok(())
@@ -627,12 +668,13 @@ SHA256:
             .returning(|_entry| Box::pin(async {}));
 
         let mut mock_release_tracker = MockReleaseTracker::new();
+        // No releases are scanned yet
         mock_release_tracker
-            .expect_is_release_scanned()
-            .returning(|_, _, _| Box::pin(async { Ok(false) }));
+            .expect_filter_scanned_releases()
+            .returning(|_| Box::pin(async { Ok(std::collections::HashSet::new()) }));
         mock_release_tracker
-            .expect_mark_release_scanned()
-            .returning(|_, _, _| Box::pin(async { Ok(()) }));
+            .expect_mark_releases_scanned()
+            .returning(|_| Box::pin(async { Ok(()) }));
 
         let mut mock_package_store = MockPackageStore::new();
         // Asset 2 is already cached
@@ -677,7 +719,7 @@ SHA256:
             .withf(|id| *id == 1)
             .returning(|_| Box::pin(async { None }));
         mock_package_store
-            .expect_insert_package()
+            .expect_insert_packages()
             .returning(|_| Box::pin(async { Ok(()) }));
         mock_package_store
             .expect_list_all_packages()
@@ -1118,19 +1160,19 @@ SHA256:
         let mut mock_release_tracker = MockReleaseTracker::new();
         // Release 1 is already scanned, release 2 is not
         mock_release_tracker
-            .expect_is_release_scanned()
-            .withf(|_, _, release_id| *release_id == 1)
-            .returning(|_, _, _| Box::pin(async { Ok(true) }));
+            .expect_filter_scanned_releases()
+            .returning(|_| {
+                // Return release 1 as already scanned
+                let mut scanned = std::collections::HashSet::new();
+                scanned.insert(1u64);
+                Box::pin(async move { Ok(scanned) })
+            });
+        // mark_releases_scanned should only be called for release 2
         mock_release_tracker
-            .expect_is_release_scanned()
-            .withf(|_, _, release_id| *release_id == 2)
-            .returning(|_, _, _| Box::pin(async { Ok(false) }));
-        // mark_release_scanned should only be called for release 2
-        mock_release_tracker
-            .expect_mark_release_scanned()
-            .withf(|_, _, release_id| *release_id == 2)
+            .expect_mark_releases_scanned()
+            .withf(|releases| releases.len() == 1 && releases[0].release_id == 2)
             .times(1)
-            .returning(|_, _, _| Box::pin(async { Ok(()) }));
+            .returning(|_| Box::pin(async { Ok(()) }));
 
         let mut mock_package_store = MockPackageStore::new();
         // find_package_by_asset_id should be called for the new package (release 2, asset 200)
@@ -1139,9 +1181,10 @@ SHA256:
             .withf(|id| *id == 200)
             .times(1)
             .returning(|_| Box::pin(async { None }));
-        // insert_package should only be called for the new package
+        // insert_packages should only be called for the new package
         mock_package_store
-            .expect_insert_package()
+            .expect_insert_packages()
+            .withf(|packages| packages.len() == 1)
             .times(1)
             .returning(|_| Box::pin(async { Ok(()) }));
         mock_package_store
