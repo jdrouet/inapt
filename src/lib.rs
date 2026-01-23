@@ -42,7 +42,7 @@ impl Config {
             deb_extractor: DebReader,
             pgp_cipher: self.pgp_cipher.build()?,
             release_tracker: storage.clone(),
-            package_store: storage,
+            package_store: storage.clone(),
         };
         Ok(Application {
             github,
@@ -50,6 +50,7 @@ impl Config {
                 .http_server
                 .builder()?
                 .with_apt_repository(apt_repository_service.clone())
+                .with_health_checker(storage)
                 .build()?,
             worker: self
                 .worker

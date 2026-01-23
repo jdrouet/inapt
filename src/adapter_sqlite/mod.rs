@@ -509,6 +509,16 @@ impl SqliteStorage {
     }
 }
 
+impl crate::adapter_http_server::HealthCheck for SqliteStorage {
+    async fn health_check(&self) -> anyhow::Result<()> {
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map_err(|err| anyhow::anyhow!("database health check failed: {err}"))?;
+        Ok(())
+    }
+}
+
 impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
     #[tracing::instrument(
         skip(self, releases),
