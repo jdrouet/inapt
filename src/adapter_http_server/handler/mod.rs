@@ -35,21 +35,10 @@ where
         )
         .route("/pool/main/{p}/{pkg}/{file}", get(pool_redirect::handler))
         // Translation files (i18n) - serve actual English descriptions
+        // Use a single route with filename capture to avoid Axum's "one parameter per segment" limitation
         .route(
-            "/dists/stable/main/i18n/Translation-{lang}",
+            "/dists/stable/main/i18n/{filename}",
             get(translation::handler::<AR>),
-        )
-        .route(
-            "/dists/stable/main/i18n/Translation-{lang}.gz",
-            get(translation::gz_handler::<AR>),
-        )
-        .route(
-            "/dists/stable/main/i18n/Translation-{lang}.bz2",
-            get(translation::bz2_handler),
-        )
-        .route(
-            "/dists/stable/main/i18n/Translation-{lang}.xz",
-            get(translation::xz_handler),
         )
 }
 
@@ -80,5 +69,19 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         (self.status_code, self.message).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::domain::prelude::MockAptRepositoryService;
+
+    /// Test that the router can be built without panicking.
+    /// This catches invalid route patterns (like having multiple parameters in one segment)
+    /// at test time rather than at runtime.
+    #[test]
+    fn should_build_router_without_panicking() {
+        // This will panic if any route pattern is invalid
+        let _router = super::build::<MockAptRepositoryService>();
     }
 }
