@@ -11,7 +11,7 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use flate2::write::GzEncoder;
 
-use crate::adapter_http_server::ServerState;
+use crate::adapter_http_server::{HealthCheck, ServerState};
 
 /// Empty gzip content for empty responses
 const EMPTY_GZIP: &[u8] = &[
@@ -74,12 +74,13 @@ fn parse_translation_filename(filename: &str) -> Option<(&str, Compression)> {
 /// Parses the filename to determine language and compression format,
 /// then returns the appropriate response.
 #[tracing::instrument(skip_all)]
-pub async fn handler<AR>(
-    State(state): State<ServerState<AR>>,
+pub async fn handler<AR, HC>(
+    State(state): State<ServerState<AR, HC>>,
     Path(filename): Path<String>,
 ) -> Result<Response, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    HC: HealthCheck + Clone,
 {
     let Some((lang, compression)) = parse_translation_filename(&filename) else {
         tracing::debug!(filename = %filename, "invalid translation filename");
@@ -143,6 +144,15 @@ mod tests {
 
     use crate::{adapter_http_server::ServerState, domain::prelude::MockAptRepositoryService};
 
+    #[derive(Clone)]
+    struct MockHealthCheck;
+
+    impl HealthCheck for MockHealthCheck {
+        async fn health_check(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn should_parse_translation_filename() {
         assert_eq!(
@@ -174,7 +184,10 @@ mod tests {
             .return_once(|| Box::pin(async { Ok(String::from("Description: test")) }));
 
         let response = handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path("Translation-en".to_string()),
         )
         .await
@@ -194,7 +207,10 @@ mod tests {
         // No expectations - translation_file should not be called for non-English
 
         let response = handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path("Translation-fr".to_string()),
         )
         .await
@@ -217,7 +233,10 @@ mod tests {
             .return_once(|| Box::pin(async { Ok(String::from("Description: test")) }));
 
         let response = handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path("Translation-en.gz".to_string()),
         )
         .await
@@ -237,7 +256,10 @@ mod tests {
         let apt_repository = MockAptRepositoryService::new();
 
         let response = handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path("Translation-fr.bz2".to_string()),
         )
         .await
@@ -257,7 +279,10 @@ mod tests {
         let apt_repository = MockAptRepositoryService::new();
 
         let response = handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path("Translation-de.xz".to_string()),
         )
         .await
@@ -276,7 +301,10 @@ mod tests {
         let apt_repository = MockAptRepositoryService::new();
 
         let response = handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path("Invalid".to_string()),
         )
         .await;
@@ -293,7 +321,10 @@ mod tests {
             .return_once(|| Box::pin(async { Err(anyhow::anyhow!("fetch error")) }));
 
         let response = handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path("Translation-en".to_string()),
         )
         .await;

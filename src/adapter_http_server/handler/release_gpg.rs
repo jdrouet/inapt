@@ -1,11 +1,12 @@
 use axum::extract::State;
 
-use crate::adapter_http_server::{ServerState, handler::ApiError};
+use crate::adapter_http_server::{HealthCheck, ServerState, handler::ApiError};
 
 #[tracing::instrument(skip_all, err(Debug))]
-pub async fn handler<AR>(State(state): State<ServerState<AR>>) -> Result<String, ApiError>
+pub async fn handler<AR, HC>(State(state): State<ServerState<AR, HC>>) -> Result<String, ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    HC: HealthCheck + Clone,
 {
     match state.apt_repository.release_gpg_signature().await {
         Ok(Some(value)) => Ok(value),
@@ -43,7 +44,17 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::adapter_http_server::HealthCheck;
     use crate::domain::prelude::MockAptRepositoryService;
+
+    #[derive(Clone)]
+    struct MockHealthCheck;
+
+    impl HealthCheck for MockHealthCheck {
+        async fn health_check(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn should_return_error_if_empty() {
@@ -52,7 +63,10 @@ mod tests {
             .expect_release_gpg_signature()
             .once()
             .return_once(|| Box::pin(async move { Ok(None) }));
-        let state = crate::adapter_http_server::ServerState { apt_repository };
+        let state = crate::adapter_http_server::ServerState {
+            apt_repository,
+            health_checker: MockHealthCheck,
+        };
         let err = super::handler(axum::extract::State(state))
             .await
             .unwrap_err();
@@ -72,7 +86,10 @@ mod tests {
                     )))
                 })
             });
-        let state = crate::adapter_http_server::ServerState { apt_repository };
+        let state = crate::adapter_http_server::ServerState {
+            apt_repository,
+            health_checker: MockHealthCheck,
+        };
         let value = super::handler(axum::extract::State(state)).await.unwrap();
         assert_eq!(
             value,
