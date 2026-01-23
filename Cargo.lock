@@ -1612,6 +1612,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "walkdir",
  "xz2",
  "zstd",
 ]
