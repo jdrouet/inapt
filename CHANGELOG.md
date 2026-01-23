@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3](https://github.com/jdrouet/inapt/compare/v0.3.2...v0.3.3) - 2026-01-23
+
+### Added
+
+- add health check endpoint ([#52](https://github.com/jdrouet/inapt/pull/52))
+
+### Other
+
+- add contributing guidelines and apply code style fixes ([#50](https://github.com/jdrouet/inapt/pull/50))
+
 ## [0.3.2](https://github.com/jdrouet/inapt/compare/v0.3.1...v0.3.2) - 2026-01-23
 
 ### Added
