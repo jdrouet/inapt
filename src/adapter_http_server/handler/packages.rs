@@ -3,14 +3,15 @@ use std::io::Write;
 use axum::extract::{Path, State};
 use flate2::write::GzEncoder;
 
-use crate::adapter_http_server::ServerState;
+use crate::adapter_http_server::{HealthCheck, ServerState};
 
-pub async fn handler<AR>(
-    State(state): State<ServerState<AR>>,
+pub async fn handler<AR, HC>(
+    State(state): State<ServerState<AR, HC>>,
     Path(arch): Path<String>,
 ) -> Result<String, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    HC: HealthCheck + Clone,
 {
     state
         .apt_repository
@@ -50,12 +51,13 @@ where
 // Size: 23456
 // SHA256: 2222222222222222222222222222222222222222222222222222222222222222
 
-pub async fn gz_handler<AR>(
-    State(state): State<ServerState<AR>>,
+pub async fn gz_handler<AR, HC>(
+    State(state): State<ServerState<AR, HC>>,
     Path(arch): Path<String>,
 ) -> Result<Vec<u8>, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    HC: HealthCheck + Clone,
 {
     let data = handler(State(state), Path(arch)).await?;
     let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
@@ -73,7 +75,19 @@ where
 mod tests {
     use axum::extract::{Path, State};
 
-    use crate::{adapter_http_server::ServerState, domain::prelude::MockAptRepositoryService};
+    use crate::{
+        adapter_http_server::{HealthCheck, ServerState},
+        domain::prelude::MockAptRepositoryService,
+    };
+
+    #[derive(Clone)]
+    struct MockHealthCheck;
+
+    impl HealthCheck for MockHealthCheck {
+        async fn health_check(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn should_list_packages_when_requested() {
@@ -86,7 +100,10 @@ mod tests {
                 Box::pin(async { Ok(String::from("Package: test\nVersion: 1.0.0")) })
             });
         let res = super::handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(String::from("amd64")),
         )
         .await
@@ -102,7 +119,10 @@ mod tests {
             .once()
             .return_once(|_| Box::pin(async { Err(anyhow::anyhow!("fetch error")) }));
         let res = super::handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(String::from("amd64")),
         )
         .await;
@@ -120,7 +140,10 @@ mod tests {
                 Box::pin(async { Ok(String::from("Package: test\nVersion: 1.0.0")) })
             });
         let res = super::gz_handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(String::from("amd64")),
         )
         .await
@@ -139,7 +162,10 @@ mod tests {
             .once()
             .return_once(|_| Box::pin(async { Err(anyhow::anyhow!("fetch error")) }));
         let res = super::gz_handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(String::from("amd64")),
         )
         .await;

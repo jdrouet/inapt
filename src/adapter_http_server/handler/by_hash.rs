@@ -5,8 +5,8 @@ use axum::http::header;
 use axum::response::IntoResponse;
 use flate2::write::GzEncoder;
 
-use crate::adapter_http_server::ServerState;
 use crate::adapter_http_server::handler::ApiError;
+use crate::adapter_http_server::{HealthCheck, ServerState};
 
 #[derive(serde::Deserialize)]
 pub struct ByHashParams {
@@ -14,12 +14,13 @@ pub struct ByHashParams {
     hash: String,
 }
 
-pub async fn handler<AR>(
-    State(state): State<ServerState<AR>>,
+pub async fn handler<AR, HC>(
+    State(state): State<ServerState<AR, HC>>,
     Path(params): Path<ByHashParams>,
 ) -> Result<impl IntoResponse, ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    HC: HealthCheck + Clone,
 {
     let Some(hash_match) = state
         .apt_repository
@@ -74,10 +75,19 @@ mod tests {
     use axum::extract::{Path, State};
     use axum::response::IntoResponse;
 
-    use crate::adapter_http_server::ServerState;
+    use crate::adapter_http_server::{HealthCheck, ServerState};
     use crate::domain::prelude::{ArchitectureHashMatch, MockAptRepositoryService};
 
     use super::ByHashParams;
+
+    #[derive(Clone)]
+    struct MockHealthCheck;
+
+    impl HealthCheck for MockHealthCheck {
+        async fn health_check(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn should_return_plain_packages_by_hash() {
@@ -101,7 +111,10 @@ mod tests {
             .return_once(|_| Box::pin(async { Ok("Package: test\n".to_string()) }));
 
         let res = super::handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(ByHashParams {
                 arch: "amd64".to_string(),
                 hash: "abc123".to_string(),
@@ -140,7 +153,10 @@ mod tests {
             .return_once(|_| Box::pin(async { Ok("Package: test\n".to_string()) }));
 
         let res = super::handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(ByHashParams {
                 arch: "arm64".to_string(),
                 hash: "def456".to_string(),
@@ -166,7 +182,10 @@ mod tests {
             .return_once(|_| Box::pin(async { Ok(None) }));
 
         let result = super::handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(ByHashParams {
                 arch: "amd64".to_string(),
                 hash: "unknown".to_string(),
@@ -195,7 +214,10 @@ mod tests {
             });
 
         let result = super::handler(
-            State(ServerState { apt_repository }),
+            State(ServerState {
+                apt_repository,
+                health_checker: MockHealthCheck,
+            }),
             Path(ByHashParams {
                 arch: "amd64".to_string(),
                 hash: "somehash".to_string(),

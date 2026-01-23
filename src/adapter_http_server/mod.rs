@@ -1,7 +1,17 @@
+use std::future::Future;
+
 use anyhow::Context;
 
 mod handler;
 mod middleware;
+
+/// Trait for components that can report their health status.
+/// Used by the HTTP server to implement the `/health` endpoint.
+pub trait HealthCheck: Send + Sync + 'static {
+    /// Check if the component is healthy.
+    /// Returns Ok(()) if healthy, Err with details if not.
+    fn health_check(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
 
 const DEFAULT_ADDRESS: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 const DEFAULT_PORT: u16 = 3000;
@@ -22,36 +32,41 @@ impl Config {
         DEFAULT_PORT
     }
 
-    pub fn builder<AR>(self) -> anyhow::Result<ServerBuilder<AR>> {
+    pub fn builder<AR, HC>(self) -> anyhow::Result<ServerBuilder<AR, HC>> {
         Ok(ServerBuilder {
             address: std::net::SocketAddr::from((self.address, self.port)),
             apt_repository: None,
+            health_checker: None,
         })
     }
 }
 
 #[derive(Debug)]
-pub struct ServerBuilder<AR> {
+pub struct ServerBuilder<AR, HC> {
     address: std::net::SocketAddr,
     apt_repository: Option<AR>,
+    health_checker: Option<HC>,
 }
 
-impl<AR> ServerBuilder<AR>
+impl<AR, HC> ServerBuilder<AR, HC>
 where
     AR: Clone + crate::domain::prelude::AptRepositoryReader,
+    HC: Clone + HealthCheck,
 {
     pub fn with_apt_repository(self, value: AR) -> Self {
         Self {
-            address: self.address,
             apt_repository: Some(value),
+            ..self
         }
     }
-}
 
-impl<AR> ServerBuilder<AR>
-where
-    AR: Clone + crate::domain::prelude::AptRepositoryReader,
-{
+    pub fn with_health_checker(self, value: HC) -> Self {
+        Self {
+            health_checker: Some(value),
+            ..self
+        }
+    }
+
     pub fn build(self) -> anyhow::Result<Server> {
         let router = handler::build()
             .layer(middleware::tracing::layer())
@@ -59,6 +74,9 @@ where
                 apt_repository: self
                     .apt_repository
                     .ok_or_else(|| anyhow::anyhow!("apt_repository service not defined"))?,
+                health_checker: self
+                    .health_checker
+                    .ok_or_else(|| anyhow::anyhow!("health_checker not defined"))?,
             });
         Ok(Server {
             address: self.address,
@@ -84,9 +102,11 @@ impl Server {
 }
 
 #[derive(Clone)]
-struct ServerState<AR>
+pub(crate) struct ServerState<AR, HC>
 where
     AR: Clone + crate::domain::prelude::AptRepositoryReader,
+    HC: Clone + HealthCheck,
 {
-    apt_repository: AR,
+    pub(crate) apt_repository: AR,
+    pub(crate) health_checker: HC,
 }
