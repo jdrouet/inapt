@@ -8,8 +8,8 @@ use sqlx::{FromRow, Row, SqlitePool};
 use tokio::sync::RwLock;
 
 use crate::domain::entity::{
-    ArchitectureMetadata, DebAsset, FileMetadata, Package, PackageControl, PackageMetadata,
-    ReleaseMetadata, TranslationEntry, TranslationMetadata,
+    ApkAsset, ApkMetadata, ApkPackage, ArchitectureMetadata, DebAsset, FileMetadata, Package,
+    PackageControl, PackageMetadata, ReleaseMetadata, TranslationEntry, TranslationMetadata,
 };
 
 // SQL query constants
@@ -66,6 +66,42 @@ const SQL_SELECT_ALL_DEB_ASSETS: &str = r#"
            pkg_name, pkg_version, pkg_section, pkg_priority, pkg_architecture,
            pkg_maintainer, pkg_description, pkg_others, file_size, file_sha256
     FROM deb_assets
+"#;
+
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK support (#64), wired in #65")
+)]
+const SQL_INSERT_APK_ASSETS_BATCH: &str = r#"
+    INSERT OR REPLACE INTO apk_assets (
+        id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+        pkg_name, pkg_version, pkg_architecture, pkg_installed_size,
+        pkg_description, pkg_url, pkg_license, pkg_origin, pkg_maintainer,
+        pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash
+    ) "#;
+
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK support (#64), wired in #65")
+)]
+const SQL_SELECT_APK_ASSET_BY_ID: &str = r#"
+    SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+           pkg_name, pkg_version, pkg_architecture, pkg_installed_size,
+           pkg_description, pkg_url, pkg_license, pkg_origin, pkg_maintainer,
+           pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash
+    FROM apk_assets WHERE id = ?
+"#;
+
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK support (#64), wired in #65")
+)]
+const SQL_SELECT_ALL_APK_ASSETS: &str = r#"
+    SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
+           pkg_name, pkg_version, pkg_architecture, pkg_installed_size,
+           pkg_description, pkg_url, pkg_license, pkg_origin, pkg_maintainer,
+           pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash
+    FROM apk_assets
 "#;
 
 // Wrapper type for implementing FromRow on external types
@@ -169,6 +205,43 @@ impl<'r> FromRow<'r, SqliteRow> for SqliteWrapper<Package> {
                 },
             },
             asset: DebAsset {
+                repo_owner: row.try_get("repo_owner")?,
+                repo_name: row.try_get("repo_name")?,
+                release_id: row.try_get::<i64, _>("release_id")? as u64,
+                asset_id: row.try_get::<i64, _>("id")? as u64,
+                filename: row.try_get("filename")?,
+                url: row.try_get("url")?,
+                size: row.try_get::<i64, _>("size")? as u64,
+                sha256: row.try_get("sha256")?,
+            },
+        }))
+    }
+}
+
+impl<'r> FromRow<'r, SqliteRow> for SqliteWrapper<ApkPackage> {
+    fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
+        let dependencies: String = row.try_get("pkg_dependencies")?;
+        let provides: String = row.try_get("pkg_provides")?;
+
+        Ok(SqliteWrapper(ApkPackage {
+            metadata: ApkMetadata {
+                name: row.try_get("pkg_name")?,
+                version: row.try_get("pkg_version")?,
+                architecture: row.try_get("pkg_architecture")?,
+                installed_size: row.try_get::<i64, _>("pkg_installed_size")? as u64,
+                description: row.try_get("pkg_description")?,
+                url: row.try_get("pkg_url")?,
+                license: row.try_get("pkg_license")?,
+                origin: row.try_get("pkg_origin")?,
+                maintainer: row.try_get("pkg_maintainer")?,
+                build_date: row
+                    .try_get::<Option<i64>, _>("pkg_build_date")?
+                    .map(|v| v as u64),
+                dependencies: serde_json::from_str(&dependencies).unwrap_or_default(),
+                provides: serde_json::from_str(&provides).unwrap_or_default(),
+                datahash: row.try_get("pkg_datahash")?,
+            },
+            asset: ApkAsset {
                 repo_owner: row.try_get("repo_owner")?,
                 repo_name: row.try_get("repo_name")?,
                 release_id: row.try_get::<i64, _>("release_id")? as u64,
@@ -686,6 +759,100 @@ impl crate::domain::prelude::PackageStore for SqliteStorage {
     }
 }
 
+impl crate::domain::prelude::ApkPackageStore for SqliteStorage {
+    #[tracing::instrument(
+        skip(self, packages),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_INSERT_APK_ASSETS_BATCH,
+            span.type = "sql",
+            otel.kind = "client",
+            packages.count = packages.len()
+        )
+    )]
+    async fn insert_apk_packages(&self, packages: &[ApkPackage]) -> anyhow::Result<()> {
+        if packages.is_empty() {
+            return Ok(());
+        }
+
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_INSERT_APK_ASSETS_BATCH);
+
+        query_builder.push_values(packages, |mut b, package| {
+            let dependencies_json =
+                serde_json::to_string(&package.metadata.dependencies).unwrap_or_default();
+            let provides_json =
+                serde_json::to_string(&package.metadata.provides).unwrap_or_default();
+
+            b.push_bind(package.asset.asset_id as i64)
+                .push_bind(package.asset.release_id as i64)
+                .push_bind(&package.asset.repo_owner)
+                .push_bind(&package.asset.repo_name)
+                .push_bind(&package.asset.filename)
+                .push_bind(&package.asset.url)
+                .push_bind(package.asset.size as i64)
+                .push_bind(&package.asset.sha256)
+                .push_bind(&package.metadata.name)
+                .push_bind(&package.metadata.version)
+                .push_bind(&package.metadata.architecture)
+                .push_bind(package.metadata.installed_size as i64)
+                .push_bind(&package.metadata.description)
+                .push_bind(&package.metadata.url)
+                .push_bind(&package.metadata.license)
+                .push_bind(&package.metadata.origin)
+                .push_bind(&package.metadata.maintainer)
+                .push_bind(package.metadata.build_date.map(|v| v as i64))
+                .push_bind(dependencies_json)
+                .push_bind(provides_json)
+                .push_bind(&package.metadata.datahash);
+        });
+
+        query_builder.build().execute(&self.pool).await?;
+
+        Ok(())
+    }
+
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_APK_ASSET_BY_ID,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
+    async fn find_apk_package_by_asset_id(&self, asset_id: u64) -> Option<ApkPackage> {
+        match sqlx::query_as::<_, SqliteWrapper<ApkPackage>>(SQL_SELECT_APK_ASSET_BY_ID)
+            .bind(asset_id as i64)
+            .fetch_optional(&self.pool)
+            .await
+        {
+            Ok(Some(wrapper)) => Some(wrapper.into_inner()),
+            Ok(None) => None,
+            Err(err) => {
+                tracing::error!(error = ?err, asset_id, "failed to find APK package by asset_id");
+                None
+            }
+        }
+    }
+
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            db.system = "sqlite",
+            db.statement = SQL_SELECT_ALL_APK_ASSETS,
+            span.type = "sql",
+            otel.kind = "client"
+        )
+    )]
+    async fn list_all_apk_packages(&self) -> anyhow::Result<Vec<ApkPackage>> {
+        let rows: Vec<SqliteWrapper<ApkPackage>> = sqlx::query_as(SQL_SELECT_ALL_APK_ASSETS)
+            .fetch_all(&self.pool)
+            .await?;
+
+        Ok(rows.into_iter().map(|w| w.into_inner()).collect())
+    }
+}
+
 impl crate::domain::prelude::ReleaseStore for SqliteStorage {
     async fn insert_release(&self, entry: ReleaseMetadata) {
         // Save to database
@@ -708,7 +875,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::domain::prelude::{PackageStore, ReleaseStore, ReleaseTracker};
+    use crate::domain::prelude::{ApkPackageStore, PackageStore, ReleaseStore, ReleaseTracker};
 
     async fn create_test_storage() -> SqliteStorage {
         let temp_dir = temp_file::empty();
@@ -979,5 +1146,217 @@ mod tests {
         let found = storage.find_latest_release().await;
         assert!(found.is_some());
         assert_eq!(found.unwrap().origin, "Second");
+    }
+
+    fn create_test_apk_package(asset_id: u64, release_id: u64) -> ApkPackage {
+        ApkPackage {
+            metadata: ApkMetadata {
+                name: "test-apk".to_string(),
+                version: "1.0.0-r0".to_string(),
+                architecture: "x86_64".to_string(),
+                installed_size: 4096,
+                description: "A test APK package".to_string(),
+                url: "https://example.com/test-apk".to_string(),
+                license: "MIT".to_string(),
+                origin: Some("test-apk".to_string()),
+                maintainer: Some("Test <test@example.com>".to_string()),
+                build_date: Some(1700000000),
+                dependencies: vec!["musl>=1.2".to_string(), "libgcc".to_string()],
+                provides: vec!["test-apk=1.0.0-r0".to_string()],
+                datahash: Some("abc123def456".to_string()),
+            },
+            asset: ApkAsset {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id,
+                asset_id,
+                filename: "test-apk-1.0.0-r0.apk".to_string(),
+                url: "https://example.com/test.apk".to_string(),
+                size: 2048,
+                sha256: Some("sha256hash".to_string()),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn should_store_and_find_apk_packages_when_inserted() {
+        use crate::domain::prelude::ReleaseIdentifier;
+
+        let storage = create_test_storage().await;
+
+        storage
+            .mark_releases_scanned(&[ReleaseIdentifier {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 1,
+            }])
+            .await
+            .unwrap();
+
+        let package = create_test_apk_package(200, 1);
+
+        storage.insert_apk_packages(&[package]).await.unwrap();
+
+        // Find by asset_id
+        let found = storage.find_apk_package_by_asset_id(200).await;
+        assert!(found.is_some());
+        let found = found.unwrap();
+        assert_eq!(found.metadata.name, "test-apk");
+        assert_eq!(found.metadata.version, "1.0.0-r0");
+        assert_eq!(found.metadata.architecture, "x86_64");
+        assert_eq!(found.metadata.installed_size, 4096);
+        assert_eq!(found.metadata.description, "A test APK package");
+        assert_eq!(found.metadata.url, "https://example.com/test-apk");
+        assert_eq!(found.metadata.license, "MIT");
+        assert_eq!(found.metadata.origin, Some("test-apk".to_string()));
+        assert_eq!(
+            found.metadata.maintainer,
+            Some("Test <test@example.com>".to_string())
+        );
+        assert_eq!(found.metadata.build_date, Some(1700000000));
+        assert_eq!(
+            found.metadata.dependencies,
+            vec!["musl>=1.2".to_string(), "libgcc".to_string()]
+        );
+        assert_eq!(
+            found.metadata.provides,
+            vec!["test-apk=1.0.0-r0".to_string()]
+        );
+        assert_eq!(found.metadata.datahash, Some("abc123def456".to_string()));
+        assert_eq!(found.asset.asset_id, 200);
+        assert_eq!(found.asset.size, 2048);
+        assert_eq!(found.asset.sha256, Some("sha256hash".to_string()));
+
+        // Not found for different asset_id
+        let not_found = storage.find_apk_package_by_asset_id(999).await;
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn should_list_all_apk_packages_when_multiple_inserted() {
+        use crate::domain::prelude::ReleaseIdentifier;
+
+        let storage = create_test_storage().await;
+
+        storage
+            .mark_releases_scanned(&[
+                ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 1,
+                },
+                ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 2,
+                },
+            ])
+            .await
+            .unwrap();
+
+        let package1 = create_test_apk_package(200, 1);
+        let package2 = create_test_apk_package(201, 1);
+        let package3 = create_test_apk_package(202, 2);
+
+        storage
+            .insert_apk_packages(&[package1, package2, package3])
+            .await
+            .unwrap();
+
+        let packages = storage.list_all_apk_packages().await.unwrap();
+        assert_eq!(packages.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn should_handle_apk_packages_with_optional_fields_as_none() {
+        use crate::domain::prelude::ReleaseIdentifier;
+
+        let storage = create_test_storage().await;
+
+        storage
+            .mark_releases_scanned(&[ReleaseIdentifier {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 1,
+            }])
+            .await
+            .unwrap();
+
+        let package = ApkPackage {
+            metadata: ApkMetadata {
+                name: "minimal-apk".to_string(),
+                version: "0.1.0-r0".to_string(),
+                architecture: "aarch64".to_string(),
+                installed_size: 512,
+                description: "Minimal package".to_string(),
+                url: "https://example.com".to_string(),
+                license: "GPL-3.0".to_string(),
+                origin: None,
+                maintainer: None,
+                build_date: None,
+                dependencies: vec![],
+                provides: vec![],
+                datahash: None,
+            },
+            asset: ApkAsset {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 1,
+                asset_id: 300,
+                filename: "minimal-apk-0.1.0-r0.apk".to_string(),
+                url: "https://example.com/minimal.apk".to_string(),
+                size: 256,
+                sha256: None,
+            },
+        };
+
+        storage.insert_apk_packages(&[package]).await.unwrap();
+
+        let found = storage.find_apk_package_by_asset_id(300).await.unwrap();
+        assert_eq!(found.metadata.name, "minimal-apk");
+        assert_eq!(found.metadata.origin, None);
+        assert_eq!(found.metadata.maintainer, None);
+        assert_eq!(found.metadata.build_date, None);
+        assert!(found.metadata.dependencies.is_empty());
+        assert!(found.metadata.provides.is_empty());
+        assert_eq!(found.metadata.datahash, None);
+        assert_eq!(found.asset.sha256, None);
+    }
+
+    #[tokio::test]
+    async fn should_return_empty_list_when_no_apk_packages_inserted() {
+        let storage = create_test_storage().await;
+
+        let packages = storage.list_all_apk_packages().await.unwrap();
+        assert!(packages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_replace_apk_package_when_same_asset_id_inserted() {
+        use crate::domain::prelude::ReleaseIdentifier;
+
+        let storage = create_test_storage().await;
+
+        storage
+            .mark_releases_scanned(&[ReleaseIdentifier {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 1,
+            }])
+            .await
+            .unwrap();
+
+        let package_v1 = create_test_apk_package(200, 1);
+        storage.insert_apk_packages(&[package_v1]).await.unwrap();
+
+        // Insert with same asset_id but different version
+        let mut package_v2 = create_test_apk_package(200, 1);
+        package_v2.metadata.version = "2.0.0-r0".to_string();
+        storage.insert_apk_packages(&[package_v2]).await.unwrap();
+
+        // Should have only 1 package (replaced)
+        let packages = storage.list_all_apk_packages().await.unwrap();
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].metadata.version, "2.0.0-r0");
     }
 }

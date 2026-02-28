@@ -407,7 +407,10 @@ mockall::mock! {
 }
 
 /// Stores APK packages for incremental updates.
-#[expect(dead_code, reason = "APK support trait (#60), implemented in #64")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK support trait (#64), wired in #65")
+)]
 pub trait ApkPackageStore: Send + Sync + 'static {
     /// Insert multiple APK packages in a single batch operation.
     fn insert_apk_packages(
