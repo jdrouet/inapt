@@ -269,13 +269,17 @@ pub struct ReleaseWithAssets {
     pub assets: Vec<DebAsset>,
 }
 
-// --- APK (Alpine) entities ---
-
 /// An Alpine package with its metadata and source asset.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApkPackage {
     pub metadata: ApkMetadata,
     pub asset: ApkAsset,
+}
+
+impl ApkPackage {
+    pub fn serialize(&self) -> SerializedApkIndexEntry<'_> {
+        SerializedApkIndexEntry(self)
+    }
 }
 
 /// Metadata extracted from an `.apk` file's `.PKGINFO`.
@@ -287,9 +291,9 @@ pub struct ApkMetadata {
     pub version: String,
     /// Target architecture (`arch`), e.g. `x86_64`, `aarch64`.
     pub architecture: String,
-    /// Package size in bytes (`size`).
-    pub size: u64,
-    /// Installed size in bytes (`installed_size`).
+    /// Installed size in bytes (`.PKGINFO` `size` field).
+    /// Note: in APKINDEX this maps to `I:`, not `S:`.
+    /// `S:` (package file size) comes from `ApkAsset::size`.
     pub installed_size: u64,
     /// Short description (`pkgdesc`).
     pub description: String,
@@ -326,18 +330,19 @@ pub struct ApkAsset {
 
 /// Serialized APKINDEX entry for a single package.
 #[derive(Clone, Copy, Debug)]
-pub struct SerializedApkIndexEntry<'a>(pub &'a ApkPackage);
+pub struct SerializedApkIndexEntry<'a>(&'a ApkPackage);
 
 impl<'a> std::fmt::Display for SerializedApkIndexEntry<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let meta = &self.0.metadata;
+        let asset = &self.0.asset;
         if let Some(ref datahash) = meta.datahash {
             writeln!(f, "C:{datahash}")?;
         }
         writeln!(f, "P:{}", meta.name)?;
         writeln!(f, "V:{}", meta.version)?;
         writeln!(f, "A:{}", meta.architecture)?;
-        writeln!(f, "S:{}", meta.size)?;
+        writeln!(f, "S:{}", asset.size)?;
         writeln!(f, "I:{}", meta.installed_size)?;
         writeln!(f, "T:{}", meta.description)?;
         writeln!(f, "U:{}", meta.url)?;

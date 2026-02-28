@@ -310,8 +310,6 @@ mockall::mock! {
     }
 }
 
-// --- APK (Alpine) traits ---
-
 /// Synchronizes APK packages from upstream sources.
 pub trait ApkRepositoryWriter: Send + Sync + 'static {
     fn synchronize(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
