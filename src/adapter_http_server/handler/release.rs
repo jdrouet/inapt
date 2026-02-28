@@ -4,9 +4,12 @@ use crate::adapter_http_server::handler::ApiError;
 use crate::adapter_http_server::{HealthCheck, ServerState};
 
 #[tracing::instrument(skip_all, err(Debug))]
-pub async fn handler<AR, HC>(State(state): State<ServerState<AR, HC>>) -> Result<String, ApiError>
+pub async fn handler<AR, APK, HC>(
+    State(state): State<ServerState<AR, APK, HC>>,
+) -> Result<String, ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    APK: crate::domain::prelude::ApkRepositoryReader + Clone,
     HC: HealthCheck + Clone,
 {
     let Some(meta) = state
@@ -24,7 +27,7 @@ where
 mod tests {
     use crate::adapter_http_server::HealthCheck;
     use crate::domain::entity::ReleaseMetadata;
-    use crate::domain::prelude::MockAptRepositoryService;
+    use crate::domain::prelude::{MockApkRepositoryService, MockAptRepositoryService};
 
     #[derive(Clone)]
     struct MockHealthCheck;
@@ -64,6 +67,7 @@ mod tests {
             .return_once(|| Box::pin(async move { Ok(None) }));
         let state = crate::adapter_http_server::ServerState {
             apt_repository,
+            apk_repository: MockApkRepositoryService::new(),
             health_checker: MockHealthCheck,
         };
         let err = super::handler(axum::extract::State(state))
@@ -95,6 +99,7 @@ mod tests {
             });
         let state = crate::adapter_http_server::ServerState {
             apt_repository,
+            apk_repository: MockApkRepositoryService::new(),
             health_checker: MockHealthCheck,
         };
         let value = super::handler(axum::extract::State(state)).await.unwrap();
