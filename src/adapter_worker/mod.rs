@@ -13,27 +13,37 @@ impl Config {
         60 * 60 * 12 // 12h
     }
 
-    pub fn builder<AR>(self) -> WorkerBuilder<AR> {
+    pub fn builder<AR, APK>(self) -> WorkerBuilder<AR, APK> {
         WorkerBuilder {
             apt_repository: None,
+            apk_repository: None,
             interval: Duration::from_secs(self.interval),
         }
     }
 }
 
-pub struct WorkerBuilder<AR> {
+pub struct WorkerBuilder<AR, APK> {
     apt_repository: Option<AR>,
+    apk_repository: Option<APK>,
     interval: Duration,
 }
 
-impl<AR> WorkerBuilder<AR>
+impl<AR, APK> WorkerBuilder<AR, APK>
 where
     AR: crate::domain::prelude::AptRepositoryWriter,
+    APK: crate::domain::prelude::ApkRepositoryWriter,
 {
     pub fn with_apt_repository(self, service: AR) -> Self {
         Self {
             apt_repository: Some(service),
-            interval: self.interval,
+            ..self
+        }
+    }
+
+    pub fn with_apk_repository(self, service: APK) -> Self {
+        Self {
+            apk_repository: Some(service),
+            ..self
         }
     }
 
@@ -42,6 +52,9 @@ where
             apt_repository: self
                 .apt_repository
                 .ok_or_else(|| anyhow::anyhow!("apt repository not specified"))?,
+            apk_repository: self
+                .apk_repository
+                .ok_or_else(|| anyhow::anyhow!("apk repository not specified"))?,
             interval: self.interval,
         };
         let runner = tokio::spawn(runner.run());
@@ -62,14 +75,16 @@ impl Worker {
     }
 }
 
-struct Runner<AR> {
+struct Runner<AR, APK> {
     apt_repository: AR,
+    apk_repository: APK,
     interval: Duration,
 }
 
-impl<AR> Runner<AR>
+impl<AR, APK> Runner<AR, APK>
 where
     AR: crate::domain::prelude::AptRepositoryWriter,
+    APK: crate::domain::prelude::ApkRepositoryWriter,
 {
     async fn run(self) {
         tracing::info!("starting worker");
@@ -78,17 +93,33 @@ where
         loop {
             let _ = interval.tick().await;
             tracing::info!("starting synchro");
+
+            let mut has_error = false;
+
             match self.apt_repository.synchronize().await {
-                Ok(_) => {
-                    failures = 0;
-                    tracing::info!("synchro completed");
-                }
+                Ok(_) => tracing::info!("apt synchro completed"),
                 Err(err) => {
-                    failures += 1;
-                    let wait = failures * 30;
-                    tracing::error!(error = ?err, wait, "synchro failed, retrying later");
-                    interval.reset_after(Duration::from_secs(wait));
+                    has_error = true;
+                    tracing::error!(error = ?err, "apt synchro failed");
                 }
+            }
+
+            match self.apk_repository.synchronize().await {
+                Ok(_) => tracing::info!("apk synchro completed"),
+                Err(err) => {
+                    has_error = true;
+                    tracing::error!(error = ?err, "apk synchro failed");
+                }
+            }
+
+            if has_error {
+                failures += 1;
+                let wait = failures * 30;
+                tracing::error!(wait, "synchro failed, retrying later");
+                interval.reset_after(Duration::from_secs(wait));
+            } else {
+                failures = 0;
+                tracing::info!("synchro completed");
             }
         }
     }

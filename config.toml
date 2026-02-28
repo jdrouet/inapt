@@ -18,5 +18,9 @@ private_key_path = "resources/private-key.pem"
 [sqlite]
 path = "target/inapt.db"
 
+[rsa_signer]
+private_key_path = "resources/rsa-private-key.pem"
+# key_name = "inapt.rsa.pub"
+
 [worker]
 interval = 3600 # 1h
