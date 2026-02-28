@@ -13,6 +13,235 @@ use sha2::Digest;
 pub(crate) mod entity;
 pub(crate) mod prelude;
 
+/// Core domain service for synchronizing APK packages from GitHub
+/// and serving signed APKINDEX repositories.
+#[derive(Clone, Debug)]
+pub struct ApkRepositoryService<PS, AE, RSA, RT, APKS> {
+    pub config: Arc<Config>,
+    pub package_source: PS,
+    pub apk_extractor: AE,
+    pub rsa_signer: RSA,
+    pub release_tracker: RT,
+    pub apk_package_store: APKS,
+}
+
+impl<PS, AE, RSA, RT, APKS> ApkRepositoryService<PS, AE, RSA, RT, APKS>
+where
+    PS: prelude::PackageSource,
+    AE: prelude::ApkMetadataExtractor,
+    RSA: prelude::RsaSigner,
+    RT: prelude::ReleaseTracker,
+    APKS: prelude::ApkPackageStore,
+{
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            repo.owner = asset.repo_owner,
+            repo.name = asset.repo_name,
+            filename = asset.filename,
+        ),
+        err(Debug),
+    )]
+    async fn handle_apk_package(
+        &self,
+        asset: entity::ApkAsset,
+    ) -> anyhow::Result<Option<entity::ApkPackage>> {
+        if let Some(package) = self
+            .apk_package_store
+            .find_apk_package_by_asset_id(asset.asset_id)
+            .await?
+        {
+            tracing::debug!("apk package already known, using cached value");
+            return Ok(Some(package));
+        }
+        let apk_file = self.package_source.fetch_apk(&asset).await?;
+        match self.apk_extractor.extract_metadata(apk_file.path()).await {
+            Ok(metadata) => Ok(Some(entity::ApkPackage { metadata, asset })),
+            Err(err) => {
+                tracing::warn!(error = ?err, "unable to extract apk metadata");
+                Ok(None)
+            }
+        }
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    async fn synchronize_apk_repo(&self, repo: &str) -> anyhow::Result<()> {
+        tracing::info!("streaming apk releases for incremental sync");
+        let releases = self
+            .package_source
+            .stream_apk_releases_with_assets(repo)
+            .await?;
+
+        if releases.is_empty() {
+            return Ok(());
+        }
+
+        let release_identifiers: Vec<prelude::ReleaseIdentifier> = releases
+            .iter()
+            .map(|r| prelude::ReleaseIdentifier {
+                repo_owner: r.repo_owner.clone(),
+                repo_name: r.repo_name.clone(),
+                release_id: r.release_id,
+            })
+            .collect();
+
+        let scanned_release_ids = self
+            .release_tracker
+            .filter_scanned_releases(&release_identifiers)
+            .await?;
+
+        let unscanned_releases: Vec<_> = releases
+            .into_iter()
+            .filter(|r| !scanned_release_ids.contains(&r.release_id))
+            .collect();
+
+        if unscanned_releases.is_empty() {
+            tracing::debug!("all apk releases already scanned, nothing to do");
+            return Ok(());
+        }
+
+        tracing::info!(
+            unscanned_count = unscanned_releases.len(),
+            "processing unscanned apk releases"
+        );
+
+        let releases_to_mark: Vec<prelude::ReleaseIdentifier> = unscanned_releases
+            .iter()
+            .map(|r| prelude::ReleaseIdentifier {
+                repo_owner: r.repo_owner.clone(),
+                repo_name: r.repo_name.clone(),
+                release_id: r.release_id,
+            })
+            .collect();
+
+        self.release_tracker
+            .mark_releases_scanned(&releases_to_mark)
+            .await?;
+
+        let mut packages_to_insert = Vec::new();
+        for release in unscanned_releases {
+            tracing::info!(
+                release_id = release.release_id,
+                assets = release.assets.len(),
+                "processing apk release"
+            );
+
+            for asset in release.assets {
+                if let Some(package) = self.handle_apk_package(asset).await? {
+                    packages_to_insert.push(package);
+                }
+            }
+        }
+
+        if !packages_to_insert.is_empty() {
+            self.apk_package_store
+                .insert_apk_packages(&packages_to_insert)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    fn build_apkindex_tar_gz(
+        &self,
+        packages: &[entity::ApkPackage],
+        arch: &str,
+    ) -> anyhow::Result<Vec<u8>> {
+        let arch_packages: Vec<_> = packages
+            .iter()
+            .filter(|p| p.metadata.architecture == arch)
+            .collect();
+
+        let index_content = arch_packages
+            .iter()
+            .map(|p| p.serialize().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let index_bytes = index_content.as_bytes();
+
+        let signature = self.rsa_signer.sign(index_bytes)?;
+        let sign_entry_name = format!(".SIGN.RSA.{}", self.rsa_signer.key_name());
+
+        let mut tar_buffer = Vec::new();
+        {
+            let mut tar_builder = tar::Builder::new(&mut tar_buffer);
+
+            // Add the signature entry
+            let mut sig_header = tar::Header::new_gnu();
+            sig_header.set_size(signature.len() as u64);
+            sig_header.set_mode(0o644);
+            sig_header.set_cksum();
+            tar_builder.append_data(&mut sig_header, &sign_entry_name, signature.as_slice())?;
+
+            // Add the APKINDEX entry
+            let mut idx_header = tar::Header::new_gnu();
+            idx_header.set_size(index_bytes.len() as u64);
+            idx_header.set_mode(0o644);
+            idx_header.set_cksum();
+            tar_builder.append_data(&mut idx_header, "APKINDEX", index_bytes)?;
+
+            tar_builder.finish()?;
+        }
+
+        let mut gz_encoder = GzEncoder::new(Vec::new(), Compression::default());
+        gz_encoder.write_all(&tar_buffer)?;
+        Ok(gz_encoder.finish()?)
+    }
+}
+
+impl<PS, AE, RSA, RT, APKS> prelude::ApkRepositoryWriter
+    for ApkRepositoryService<PS, AE, RSA, RT, APKS>
+where
+    PS: prelude::PackageSource,
+    AE: prelude::ApkMetadataExtractor,
+    RSA: prelude::RsaSigner,
+    RT: prelude::ReleaseTracker,
+    APKS: prelude::ApkPackageStore,
+{
+    #[tracing::instrument(skip(self), err(Debug))]
+    async fn synchronize(&self) -> anyhow::Result<()> {
+        let mut errors = Vec::with_capacity(self.config.repositories.len());
+        for repo in self.config.repositories.iter() {
+            if let Err(err) = self.synchronize_apk_repo(repo.as_str()).await {
+                errors.push(err);
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("apk synchronization failed"))
+        }
+    }
+}
+
+impl<PS, AE, RSA, RT, APKS> prelude::ApkRepositoryReader
+    for ApkRepositoryService<PS, AE, RSA, RT, APKS>
+where
+    PS: prelude::PackageSource,
+    AE: prelude::ApkMetadataExtractor,
+    RSA: prelude::RsaSigner,
+    RT: prelude::ReleaseTracker,
+    APKS: prelude::ApkPackageStore,
+{
+    async fn apk_index(&self, arch: &str) -> anyhow::Result<Vec<u8>> {
+        let all_packages = self.apk_package_store.list_all_apk_packages().await?;
+        self.build_apkindex_tar_gz(&all_packages, arch)
+    }
+
+    async fn apk_package(
+        &self,
+        arch: &str,
+        filename: &str,
+    ) -> anyhow::Result<Option<entity::ApkPackage>> {
+        let all_packages = self.apk_package_store.list_all_apk_packages().await?;
+        Ok(all_packages
+            .into_iter()
+            .find(|p| p.metadata.architecture == arch && p.asset.filename == filename))
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
     // Origin: Debian
@@ -1548,6 +1777,647 @@ SHA256:
         .await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
+    }
+
+    // APK Repository Service tests
+
+    #[tokio::test]
+    async fn should_synchronize_apk_packages_successfully() {
+        use crate::domain::entity::{ApkAsset, ApkReleaseWithAssets};
+        use crate::domain::prelude::{
+            ApkRepositoryWriter, MockApkMetadataExtractor, MockApkPackageStore, MockPackageSource,
+            MockReleaseTracker, MockRsaSigner,
+        };
+
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["owner/apkrepo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_stream_apk_releases_with_assets()
+            .returning(|_repo| {
+                Box::pin(async {
+                    Ok(vec![ApkReleaseWithAssets {
+                        release_id: 1,
+                        repo_owner: "owner".to_string(),
+                        repo_name: "apkrepo".to_string(),
+                        assets: vec![ApkAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: "apkrepo".to_string(),
+                            release_id: 1,
+                            asset_id: 10,
+                            filename: "pkg-1.0.0-r0.apk".to_string(),
+                            url: "http://example.com/pkg-1.0.0-r0.apk".to_string(),
+                            size: 2048,
+                            sha256: None,
+                        }],
+                    }])
+                })
+            });
+        mock_package_source
+            .expect_fetch_apk()
+            .returning(|_asset| Box::pin(async { Ok(temp_file::empty()) }));
+
+        let mut mock_release_tracker = MockReleaseTracker::new();
+        mock_release_tracker
+            .expect_filter_scanned_releases()
+            .returning(|_| Box::pin(async { Ok(std::collections::HashSet::new()) }));
+        mock_release_tracker
+            .expect_mark_releases_scanned()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_apk_extractor = MockApkMetadataExtractor::new();
+        mock_apk_extractor
+            .expect_extract_metadata()
+            .returning(|_path| {
+                Box::pin(async {
+                    Ok(crate::domain::entity::ApkMetadata {
+                        name: "pkg".to_string(),
+                        version: "1.0.0-r0".to_string(),
+                        architecture: "x86_64".to_string(),
+                        installed_size: 4096,
+                        description: "A test package".to_string(),
+                        url: "https://example.com".to_string(),
+                        license: "MIT".to_string(),
+                        origin: Some("pkg".to_string()),
+                        maintainer: Some("Test <test@example.com>".to_string()),
+                        build_date: Some(1700000000),
+                        dependencies: vec!["so:libc.musl-x86_64.so.1".to_string()],
+                        provides: vec!["cmd:pkg=1.0.0-r0".to_string()],
+                        datahash: Some("abc123".to_string()),
+                    })
+                })
+            });
+
+        let mut mock_apk_store = MockApkPackageStore::new();
+        mock_apk_store
+            .expect_find_apk_package_by_asset_id()
+            .returning(|_| Box::pin(async { Ok(None) }));
+        mock_apk_store
+            .expect_insert_apk_packages()
+            .withf(|packages| packages.len() == 1 && packages[0].metadata.name == "pkg")
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = ApkRepositoryService {
+            config,
+            package_source: mock_package_source,
+            apk_extractor: mock_apk_extractor,
+            rsa_signer: MockRsaSigner::new(),
+            release_tracker: mock_release_tracker,
+            apk_package_store: mock_apk_store,
+        };
+
+        let result = ApkRepositoryWriter::synchronize(&service).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_skip_already_scanned_apk_releases() {
+        use crate::domain::entity::{ApkAsset, ApkReleaseWithAssets};
+        use crate::domain::prelude::{
+            ApkRepositoryWriter, MockApkMetadataExtractor, MockApkPackageStore, MockPackageSource,
+            MockReleaseTracker, MockRsaSigner,
+        };
+
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["owner/repo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_stream_apk_releases_with_assets()
+            .returning(|_repo| {
+                Box::pin(async {
+                    Ok(vec![
+                        ApkReleaseWithAssets {
+                            release_id: 1,
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            assets: vec![ApkAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "repo".to_string(),
+                                release_id: 1,
+                                asset_id: 100,
+                                filename: "old-1.0.0-r0.apk".to_string(),
+                                url: "http://example.com/old.apk".to_string(),
+                                size: 1024,
+                                sha256: None,
+                            }],
+                        },
+                        ApkReleaseWithAssets {
+                            release_id: 2,
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            assets: vec![ApkAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "repo".to_string(),
+                                release_id: 2,
+                                asset_id: 200,
+                                filename: "new-2.0.0-r0.apk".to_string(),
+                                url: "http://example.com/new.apk".to_string(),
+                                size: 2048,
+                                sha256: None,
+                            }],
+                        },
+                    ])
+                })
+            });
+        // Only called for new release (release_id=2)
+        mock_package_source
+            .expect_fetch_apk()
+            .times(1)
+            .returning(|_asset| Box::pin(async { Ok(temp_file::empty()) }));
+
+        let mut mock_release_tracker = MockReleaseTracker::new();
+        mock_release_tracker
+            .expect_filter_scanned_releases()
+            .returning(|_| {
+                let mut scanned = std::collections::HashSet::new();
+                scanned.insert(1u64);
+                Box::pin(async move { Ok(scanned) })
+            });
+        mock_release_tracker
+            .expect_mark_releases_scanned()
+            .withf(|releases| releases.len() == 1 && releases[0].release_id == 2)
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_apk_extractor = MockApkMetadataExtractor::new();
+        mock_apk_extractor
+            .expect_extract_metadata()
+            .returning(|_path| {
+                Box::pin(async {
+                    Ok(crate::domain::entity::ApkMetadata {
+                        name: "new".to_string(),
+                        version: "2.0.0-r0".to_string(),
+                        architecture: "x86_64".to_string(),
+                        installed_size: 4096,
+                        description: "New package".to_string(),
+                        url: "https://example.com".to_string(),
+                        license: "MIT".to_string(),
+                        origin: None,
+                        maintainer: None,
+                        build_date: None,
+                        dependencies: vec![],
+                        provides: vec![],
+                        datahash: None,
+                    })
+                })
+            });
+
+        let mut mock_apk_store = MockApkPackageStore::new();
+        mock_apk_store
+            .expect_find_apk_package_by_asset_id()
+            .returning(|_| Box::pin(async { Ok(None) }));
+        mock_apk_store
+            .expect_insert_apk_packages()
+            .withf(|packages| packages.len() == 1)
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = ApkRepositoryService {
+            config,
+            package_source: mock_package_source,
+            apk_extractor: mock_apk_extractor,
+            rsa_signer: MockRsaSigner::new(),
+            release_tracker: mock_release_tracker,
+            apk_package_store: mock_apk_store,
+        };
+
+        let result = ApkRepositoryWriter::synchronize(&service).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_use_cached_apk_package_when_available() {
+        use crate::domain::entity::{ApkAsset, ApkMetadata, ApkPackage, ApkReleaseWithAssets};
+        use crate::domain::prelude::{
+            ApkRepositoryWriter, MockApkMetadataExtractor, MockApkPackageStore, MockPackageSource,
+            MockReleaseTracker, MockRsaSigner,
+        };
+
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["owner/repo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_stream_apk_releases_with_assets()
+            .returning(|_repo| {
+                Box::pin(async {
+                    Ok(vec![ApkReleaseWithAssets {
+                        release_id: 1,
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        assets: vec![ApkAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            release_id: 1,
+                            asset_id: 10,
+                            filename: "cached-1.0.0-r0.apk".to_string(),
+                            url: "http://example.com/cached.apk".to_string(),
+                            size: 2048,
+                            sha256: None,
+                        }],
+                    }])
+                })
+            });
+        // fetch_apk should NOT be called because the package is cached
+        mock_package_source.expect_fetch_apk().times(0);
+
+        let mut mock_release_tracker = MockReleaseTracker::new();
+        mock_release_tracker
+            .expect_filter_scanned_releases()
+            .returning(|_| Box::pin(async { Ok(std::collections::HashSet::new()) }));
+        mock_release_tracker
+            .expect_mark_releases_scanned()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mock_apk_extractor = MockApkMetadataExtractor::new();
+        // extract_metadata should NOT be called because the package is cached
+
+        let mut mock_apk_store = MockApkPackageStore::new();
+        mock_apk_store
+            .expect_find_apk_package_by_asset_id()
+            .withf(|id| *id == 10)
+            .returning(|_| {
+                Box::pin(async {
+                    Ok(Some(ApkPackage {
+                        metadata: ApkMetadata {
+                            name: "cached".to_string(),
+                            version: "1.0.0-r0".to_string(),
+                            architecture: "x86_64".to_string(),
+                            installed_size: 2048,
+                            description: "Cached package".to_string(),
+                            url: "https://example.com".to_string(),
+                            license: "MIT".to_string(),
+                            origin: None,
+                            maintainer: None,
+                            build_date: None,
+                            dependencies: vec![],
+                            provides: vec![],
+                            datahash: None,
+                        },
+                        asset: ApkAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            release_id: 1,
+                            asset_id: 10,
+                            filename: "cached-1.0.0-r0.apk".to_string(),
+                            url: "http://example.com/cached.apk".to_string(),
+                            size: 2048,
+                            sha256: None,
+                        },
+                    }))
+                })
+            });
+        mock_apk_store
+            .expect_insert_apk_packages()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = ApkRepositoryService {
+            config,
+            package_source: mock_package_source,
+            apk_extractor: mock_apk_extractor,
+            rsa_signer: MockRsaSigner::new(),
+            release_tracker: mock_release_tracker,
+            apk_package_store: mock_apk_store,
+        };
+
+        let result = ApkRepositoryWriter::synchronize(&service).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_fail_apk_synchronize_when_source_errors() {
+        use crate::domain::prelude::{
+            ApkRepositoryWriter, MockApkMetadataExtractor, MockApkPackageStore, MockPackageSource,
+            MockReleaseTracker, MockRsaSigner,
+        };
+
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["owner/repo".to_string()],
+        });
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_stream_apk_releases_with_assets()
+            .returning(|_repo| Box::pin(async { Err(anyhow::anyhow!("network failure")) }));
+
+        let service = ApkRepositoryService {
+            config,
+            package_source: mock_package_source,
+            apk_extractor: MockApkMetadataExtractor::new(),
+            rsa_signer: MockRsaSigner::new(),
+            release_tracker: MockReleaseTracker::new(),
+            apk_package_store: MockApkPackageStore::new(),
+        };
+
+        let result = ApkRepositoryWriter::synchronize(&service).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn should_generate_valid_apkindex_tar_gz() {
+        use crate::domain::entity::{ApkAsset, ApkMetadata, ApkPackage};
+        use crate::domain::prelude::{
+            ApkRepositoryReader, MockApkMetadataExtractor, MockApkPackageStore, MockPackageSource,
+            MockReleaseTracker, MockRsaSigner,
+        };
+        use flate2::read::GzDecoder;
+        use std::io::Read;
+
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec![],
+        });
+
+        let mut mock_apk_store = MockApkPackageStore::new();
+        mock_apk_store.expect_list_all_apk_packages().returning(|| {
+            Box::pin(async {
+                Ok(vec![
+                    ApkPackage {
+                        metadata: ApkMetadata {
+                            name: "busybox".to_string(),
+                            version: "1.37.0-r14".to_string(),
+                            architecture: "x86_64".to_string(),
+                            installed_size: 817257,
+                            description: "Size optimized toolbox of many common UNIX utilities"
+                                .to_string(),
+                            url: "https://busybox.net/".to_string(),
+                            license: "GPL-2.0-only".to_string(),
+                            origin: Some("busybox".to_string()),
+                            maintainer: Some(
+                                "Sören Tempel <soeren+alpine@soeren-tempel.net>".to_string(),
+                            ),
+                            build_date: Some(1763903404),
+                            dependencies: vec!["so:libc.musl-x86_64.so.1".to_string()],
+                            provides: vec!["cmd:busybox=1.37.0-r14".to_string()],
+                            datahash: Some("dba362ef".to_string()),
+                        },
+                        asset: ApkAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            release_id: 1,
+                            asset_id: 10,
+                            filename: "busybox-1.37.0-r14.apk".to_string(),
+                            url: "http://example.com/busybox.apk".to_string(),
+                            size: 512000,
+                            sha256: None,
+                        },
+                    },
+                    ApkPackage {
+                        metadata: ApkMetadata {
+                            name: "other".to_string(),
+                            version: "1.0.0-r0".to_string(),
+                            architecture: "aarch64".to_string(),
+                            installed_size: 1024,
+                            description: "Other arch package".to_string(),
+                            url: "https://example.com".to_string(),
+                            license: "MIT".to_string(),
+                            origin: None,
+                            maintainer: None,
+                            build_date: None,
+                            dependencies: vec![],
+                            provides: vec![],
+                            datahash: None,
+                        },
+                        asset: ApkAsset {
+                            repo_owner: "owner".to_string(),
+                            repo_name: "repo".to_string(),
+                            release_id: 1,
+                            asset_id: 20,
+                            filename: "other-1.0.0-r0.apk".to_string(),
+                            url: "http://example.com/other.apk".to_string(),
+                            size: 1024,
+                            sha256: None,
+                        },
+                    },
+                ])
+            })
+        });
+
+        let mut mock_rsa_signer = MockRsaSigner::new();
+        mock_rsa_signer
+            .expect_sign()
+            .returning(|_data| Ok(b"FAKESIG".to_vec()));
+        mock_rsa_signer
+            .expect_key_name()
+            .return_const("test.rsa.pub".to_string());
+
+        let service = ApkRepositoryService {
+            config,
+            package_source: MockPackageSource::new(),
+            apk_extractor: MockApkMetadataExtractor::new(),
+            rsa_signer: mock_rsa_signer,
+            release_tracker: MockReleaseTracker::new(),
+            apk_package_store: mock_apk_store,
+        };
+
+        let tar_gz_bytes = ApkRepositoryReader::apk_index(&service, "x86_64")
+            .await
+            .unwrap();
+
+        // Decompress gzip
+        let mut gz_decoder = GzDecoder::new(tar_gz_bytes.as_slice());
+        let mut tar_bytes = Vec::new();
+        gz_decoder.read_to_end(&mut tar_bytes).unwrap();
+
+        // Parse tar
+        let mut archive = tar::Archive::new(tar_bytes.as_slice());
+        let mut entries: Vec<(String, String)> = Vec::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().to_string();
+            let mut content = String::new();
+            entry.read_to_string(&mut content).unwrap();
+            entries.push((path, content));
+        }
+
+        // Should have exactly 2 entries: signature and APKINDEX
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, ".SIGN.RSA.test.rsa.pub");
+        assert_eq!(entries[0].1, "FAKESIG");
+        assert_eq!(entries[1].0, "APKINDEX");
+
+        // Verify APKINDEX content only contains x86_64 packages
+        let index_content = &entries[1].1;
+        assert!(index_content.contains("P:busybox"));
+        assert!(index_content.contains("V:1.37.0-r14"));
+        assert!(index_content.contains("A:x86_64"));
+        assert!(index_content.contains("S:512000"));
+        assert!(index_content.contains("I:817257"));
+        assert!(index_content.contains("D:so:libc.musl-x86_64.so.1"));
+        assert!(index_content.contains("p:cmd:busybox=1.37.0-r14"));
+        assert!(index_content.contains("C:dba362ef"));
+        // Should NOT contain the aarch64 package
+        assert!(!index_content.contains("P:other"));
+        assert!(!index_content.contains("A:aarch64"));
+    }
+
+    #[tokio::test]
+    async fn should_find_apk_package_by_arch_and_filename() {
+        use crate::domain::entity::{ApkAsset, ApkMetadata, ApkPackage};
+        use crate::domain::prelude::{
+            ApkRepositoryReader, MockApkMetadataExtractor, MockApkPackageStore, MockPackageSource,
+            MockReleaseTracker, MockRsaSigner,
+        };
+
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec![],
+        });
+
+        let mut mock_apk_store = MockApkPackageStore::new();
+        mock_apk_store.expect_list_all_apk_packages().returning(|| {
+            Box::pin(async {
+                Ok(vec![ApkPackage {
+                    metadata: ApkMetadata {
+                        name: "busybox".to_string(),
+                        version: "1.37.0-r14".to_string(),
+                        architecture: "x86_64".to_string(),
+                        installed_size: 817257,
+                        description: "Busybox".to_string(),
+                        url: "https://busybox.net/".to_string(),
+                        license: "GPL-2.0-only".to_string(),
+                        origin: None,
+                        maintainer: None,
+                        build_date: None,
+                        dependencies: vec![],
+                        provides: vec![],
+                        datahash: None,
+                    },
+                    asset: ApkAsset {
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        release_id: 1,
+                        asset_id: 10,
+                        filename: "busybox-1.37.0-r14.apk".to_string(),
+                        url: "http://example.com/busybox.apk".to_string(),
+                        size: 512000,
+                        sha256: None,
+                    },
+                }])
+            })
+        });
+
+        let service = ApkRepositoryService {
+            config,
+            package_source: MockPackageSource::new(),
+            apk_extractor: MockApkMetadataExtractor::new(),
+            rsa_signer: MockRsaSigner::new(),
+            release_tracker: MockReleaseTracker::new(),
+            apk_package_store: mock_apk_store,
+        };
+
+        // Should find the package
+        let result = ApkRepositoryReader::apk_package(&service, "x86_64", "busybox-1.37.0-r14.apk")
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().metadata.name, "busybox");
+
+        // Should not find with wrong arch
+        let result =
+            ApkRepositoryReader::apk_package(&service, "aarch64", "busybox-1.37.0-r14.apk")
+                .await
+                .unwrap();
+        assert!(result.is_none());
+
+        // Should not find with wrong filename
+        let result = ApkRepositoryReader::apk_package(&service, "x86_64", "nonexistent.apk")
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn should_serialize_apk_index_entry_correctly() {
+        use crate::domain::entity::{ApkAsset, ApkMetadata, ApkPackage};
+
+        let package = ApkPackage {
+            metadata: ApkMetadata {
+                name: "busybox".to_string(),
+                version: "1.37.0-r14".to_string(),
+                architecture: "x86_64".to_string(),
+                installed_size: 817257,
+                description: "Size optimized toolbox of many common UNIX utilities".to_string(),
+                url: "https://busybox.net/".to_string(),
+                license: "GPL-2.0-only".to_string(),
+                origin: Some("busybox".to_string()),
+                maintainer: Some("Sören Tempel <soeren+alpine@soeren-tempel.net>".to_string()),
+                build_date: Some(1763903404),
+                dependencies: vec!["so:libc.musl-x86_64.so.1".to_string()],
+                provides: vec!["cmd:busybox=1.37.0-r14".to_string()],
+                datahash: Some("dba362ef".to_string()),
+            },
+            asset: ApkAsset {
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                release_id: 1,
+                asset_id: 10,
+                filename: "busybox-1.37.0-r14.apk".to_string(),
+                url: "http://example.com/busybox.apk".to_string(),
+                size: 512000,
+                sha256: None,
+            },
+        };
+
+        let serialized = package.serialize().to_string();
+        similar_asserts::assert_eq!(
+            serialized,
+            "C:dba362ef\n\
+             P:busybox\n\
+             V:1.37.0-r14\n\
+             A:x86_64\n\
+             S:512000\n\
+             I:817257\n\
+             T:Size optimized toolbox of many common UNIX utilities\n\
+             U:https://busybox.net/\n\
+             L:GPL-2.0-only\n\
+             o:busybox\n\
+             m:Sören Tempel <soeren+alpine@soeren-tempel.net>\n\
+             t:1763903404\n\
+             D:so:libc.musl-x86_64.so.1\n\
+             p:cmd:busybox=1.37.0-r14\n"
+        );
     }
 
     // APK PackageSource tests
