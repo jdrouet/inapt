@@ -1,9 +1,5 @@
 mod pkginfo;
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "APK adapter (#61), wired in #67")
-)]
 #[derive(Clone, Debug)]
 pub struct ApkReader;
 

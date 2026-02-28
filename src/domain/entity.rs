@@ -271,6 +271,14 @@ pub struct ReleaseWithAssets {
 
 /// A GitHub release with its .apk assets for incremental processing.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        clippy::allow_attributes,
+        reason = "APK sync path (#65), used in #67"
+    )
+)]
 pub struct ApkReleaseWithAssets {
     pub release_id: u64,
     pub repo_owner: String,

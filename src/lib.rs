@@ -2,7 +2,10 @@ use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 
-use crate::{adapter_deb::DebReader, domain::AptRepositoryService};
+use crate::{
+    adapter_apk::ApkReader, adapter_deb::DebReader, domain::ApkRepositoryService,
+    domain::AptRepositoryService,
+};
 
 mod adapter_apk;
 mod adapter_deb;
@@ -23,6 +26,7 @@ pub struct Config {
     github: adapter_github::Config,
     http_server: adapter_http_server::Config,
     pgp_cipher: adapter_pgp::Config,
+    rsa_signer: adapter_rsa::Config,
     sqlite: adapter_sqlite::Config,
     worker: adapter_worker::Config,
 }
@@ -36,15 +40,24 @@ impl Config {
     pub async fn build(self) -> anyhow::Result<Application> {
         let storage = self.sqlite.build().await?;
         let github = self.github.build()?;
+        let config = Arc::from(self.config);
         let apt_repository_service = AptRepositoryService {
             package_source: github.clone(),
             release_storage: storage.clone(),
-            config: Arc::from(self.config),
+            config: config.clone(),
             clock: PhantomData::<chrono::Utc>,
             deb_extractor: DebReader,
             pgp_cipher: self.pgp_cipher.build()?,
             release_tracker: storage.clone(),
             package_store: storage.clone(),
+        };
+        let apk_repository_service = ApkRepositoryService {
+            config,
+            package_source: github.clone(),
+            apk_extractor: ApkReader,
+            rsa_signer: self.rsa_signer.build()?,
+            release_tracker: storage.clone(),
+            apk_package_store: storage.clone(),
         };
         Ok(Application {
             github,
@@ -52,6 +65,7 @@ impl Config {
                 .http_server
                 .builder()?
                 .with_apt_repository(apt_repository_service.clone())
+                .with_apk_repository(apk_repository_service)
                 .with_health_checker(storage)
                 .build()?,
             worker: self

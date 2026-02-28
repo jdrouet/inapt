@@ -1,6 +1,10 @@
 #![cfg_attr(
     not(test),
-    expect(dead_code, reason = "APK adapter (#61), wired in #67")
+    allow(
+        dead_code,
+        clippy::allow_attributes,
+        reason = "APK sync path (#65), wired in #67"
+    )
 )]
 
 use anyhow::Context;
