@@ -311,11 +311,13 @@ mockall::mock! {
 }
 
 /// Synchronizes APK packages from upstream sources.
+#[expect(dead_code, reason = "APK support trait (#60), implemented in #65")]
 pub trait ApkRepositoryWriter: Send + Sync + 'static {
     fn synchronize(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
 /// Serves an APK repository (APKINDEX and package lookups).
+#[expect(dead_code, reason = "APK support trait (#60), implemented in #65")]
 pub trait ApkRepositoryReader: Send + Sync + 'static {
     /// Get the signed APKINDEX.tar.gz content for a given architecture.
     fn apk_index(&self, arch: &str) -> impl Future<Output = anyhow::Result<Vec<u8>>> + Send;
@@ -348,6 +350,7 @@ mockall::mock! {
 }
 
 /// Extracts metadata from an `.apk` file's `.PKGINFO`.
+#[expect(dead_code, reason = "APK support trait (#60), implemented in #61")]
 pub trait ApkMetadataExtractor: Send + Sync + 'static {
     /// Given an `.apk` file, extract package metadata.
     fn extract_metadata(
@@ -373,6 +376,7 @@ mockall::mock! {
 }
 
 /// Stores APK packages for incremental updates.
+#[expect(dead_code, reason = "APK support trait (#60), implemented in #64")]
 pub trait ApkPackageStore: Send + Sync + 'static {
     /// Insert multiple APK packages in a single batch operation.
     fn insert_apk_packages(
@@ -417,6 +421,7 @@ mockall::mock! {
 }
 
 /// Signs data with an RSA key for APK repository index signing.
+#[expect(dead_code, reason = "APK support trait (#60), implemented in #62")]
 pub trait RsaSigner: Send + Sync + 'static {
     /// Sign raw bytes and return the RSA signature.
     fn sign(&self, data: &[u8]) -> anyhow::Result<Vec<u8>>;

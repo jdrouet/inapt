@@ -276,6 +276,10 @@ pub struct ApkPackage {
     pub asset: ApkAsset,
 }
 
+#[expect(
+    dead_code,
+    reason = "foundational type for APK support (#60), consumers in #61-#68"
+)]
 impl ApkPackage {
     pub fn serialize(&self) -> SerializedApkIndexEntry<'_> {
         SerializedApkIndexEntry(self)

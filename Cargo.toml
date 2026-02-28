@@ -71,6 +71,9 @@ similar-asserts = "1.7"
 tempfile = "3"
 walkdir = "2"
 
+[lints.clippy]
+allow_attributes_without_reason = "warn"
+
 [package.metadata.cargo-machete]
 ignored = ["md-5"]
 
