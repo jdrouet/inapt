@@ -137,6 +137,21 @@ Document how to handle database migrations when upgrading.
 
 - **Do not use `sqlx::query_*!` macros** - Use the non-macro variants instead (`sqlx::query`, `sqlx::query_as`, etc.)
 
+### Comments
+
+- **Do not use banner comments** (decorative separators like `// -----`, `// =====`, or boxed headers) — use `///` rustdoc comments on the item instead
+  ```rust
+  // Bad
+  // ---------------------------------------------------------------------------
+  // APK Repository Service
+  // ---------------------------------------------------------------------------
+  pub struct ApkRepositoryService { ... }
+  
+  // Good
+  /// Core domain service for synchronizing APK packages.
+  pub struct ApkRepositoryService { ... }
+  ```
+
 ### Error Handling
 
 - Do not use single letters for error variables
