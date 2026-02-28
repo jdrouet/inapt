@@ -268,3 +268,104 @@ pub struct ReleaseWithAssets {
     pub repo_name: String,
     pub assets: Vec<DebAsset>,
 }
+
+/// An Alpine package with its metadata and source asset.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ApkPackage {
+    pub metadata: ApkMetadata,
+    pub asset: ApkAsset,
+}
+
+#[expect(
+    dead_code,
+    reason = "foundational type for APK support (#60), consumers in #61-#68"
+)]
+impl ApkPackage {
+    pub fn serialize(&self) -> SerializedApkIndexEntry<'_> {
+        SerializedApkIndexEntry(self)
+    }
+}
+
+/// Metadata extracted from an `.apk` file's `.PKGINFO`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ApkMetadata {
+    /// Package name (`pkgname`).
+    pub name: String,
+    /// Package version (`pkgver`).
+    pub version: String,
+    /// Target architecture (`arch`), e.g. `x86_64`, `aarch64`.
+    pub architecture: String,
+    /// Installed size in bytes (`.PKGINFO` `size` field).
+    /// Note: in APKINDEX this maps to `I:`, not `S:`.
+    /// `S:` (package file size) comes from `ApkAsset::size`.
+    pub installed_size: u64,
+    /// Short description (`pkgdesc`).
+    pub description: String,
+    /// Project URL (`url`).
+    pub url: String,
+    /// License identifier (`license`).
+    pub license: String,
+    /// Origin package name (`origin`).
+    pub origin: Option<String>,
+    /// Maintainer name and email (`maintainer`).
+    pub maintainer: Option<String>,
+    /// Build timestamp as Unix epoch (`builddate`).
+    pub build_date: Option<u64>,
+    /// Runtime dependencies (`depend`), one per entry.
+    pub dependencies: Vec<String>,
+    /// Capabilities this package provides (`provides`), one per entry.
+    pub provides: Vec<String>,
+    /// SHA256 checksum of the package data (`datahash`).
+    pub datahash: Option<String>,
+}
+
+/// Represents an `.apk` asset from a GitHub release.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ApkAsset {
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub release_id: u64,
+    pub asset_id: u64,
+    pub filename: String,
+    pub url: String,
+    pub size: u64,
+    pub sha256: Option<String>,
+}
+
+/// Serialized APKINDEX entry for a single package.
+#[derive(Clone, Copy, Debug)]
+pub struct SerializedApkIndexEntry<'a>(&'a ApkPackage);
+
+impl<'a> std::fmt::Display for SerializedApkIndexEntry<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let meta = &self.0.metadata;
+        let asset = &self.0.asset;
+        if let Some(ref datahash) = meta.datahash {
+            writeln!(f, "C:{datahash}")?;
+        }
+        writeln!(f, "P:{}", meta.name)?;
+        writeln!(f, "V:{}", meta.version)?;
+        writeln!(f, "A:{}", meta.architecture)?;
+        writeln!(f, "S:{}", asset.size)?;
+        writeln!(f, "I:{}", meta.installed_size)?;
+        writeln!(f, "T:{}", meta.description)?;
+        writeln!(f, "U:{}", meta.url)?;
+        writeln!(f, "L:{}", meta.license)?;
+        if let Some(ref origin) = meta.origin {
+            writeln!(f, "o:{origin}")?;
+        }
+        if let Some(ref maintainer) = meta.maintainer {
+            writeln!(f, "m:{maintainer}")?;
+        }
+        if let Some(build_date) = meta.build_date {
+            writeln!(f, "t:{build_date}")?;
+        }
+        if !meta.dependencies.is_empty() {
+            writeln!(f, "D:{}", meta.dependencies.join(" "))?;
+        }
+        if !meta.provides.is_empty() {
+            writeln!(f, "p:{}", meta.provides.join(" "))?;
+        }
+        Ok(())
+    }
+}
