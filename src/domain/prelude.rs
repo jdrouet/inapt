@@ -350,7 +350,10 @@ mockall::mock! {
 }
 
 /// Extracts metadata from an `.apk` file's `.PKGINFO`.
-#[expect(dead_code, reason = "APK support trait (#60), implemented in #61")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK support trait (#60), wired in #67")
+)]
 pub trait ApkMetadataExtractor: Send + Sync + 'static {
     /// Given an `.apk` file, extract package metadata.
     fn extract_metadata(
