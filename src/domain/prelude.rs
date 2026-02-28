@@ -150,6 +150,26 @@ pub trait PackageSource: Send + Sync + 'static {
         &self,
         repo: &str,
     ) -> impl Future<Output = anyhow::Result<Vec<ReleaseWithAssets>>> + Send;
+
+    /// Download an .apk asset.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "APK support (#63), wired in #65")
+    )]
+    fn fetch_apk(
+        &self,
+        asset: &ApkAsset,
+    ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
+
+    /// Stream releases with their .apk assets for incremental processing.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "APK support (#63), wired in #65")
+    )]
+    fn stream_apk_releases_with_assets(
+        &self,
+        repo: &str,
+    ) -> impl Future<Output = anyhow::Result<Vec<ApkReleaseWithAssets>>> + Send;
 }
 
 #[cfg(test)]
@@ -169,6 +189,14 @@ mockall::mock! {
             &self,
             repo: &str,
         ) -> impl Future<Output = anyhow::Result<Vec<ReleaseWithAssets>>> + Send;
+        fn fetch_apk(
+            &self,
+            asset: &ApkAsset,
+        ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
+        fn stream_apk_releases_with_assets(
+            &self,
+            repo: &str,
+        ) -> impl Future<Output = anyhow::Result<Vec<ApkReleaseWithAssets>>> + Send;
     }
 }
 

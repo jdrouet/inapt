@@ -1549,4 +1549,86 @@ SHA256:
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
+
+    // APK PackageSource tests
+
+    #[tokio::test]
+    async fn should_stream_apk_releases_with_assets() {
+        use crate::domain::entity::{ApkAsset, ApkReleaseWithAssets};
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_stream_apk_releases_with_assets()
+            .withf(|repo| repo == "owner/repo")
+            .returning(|_repo| {
+                Box::pin(async {
+                    Ok(vec![ApkReleaseWithAssets {
+                        release_id: 1,
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        assets: vec![
+                            ApkAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "repo".to_string(),
+                                release_id: 1,
+                                asset_id: 10,
+                                filename: "pkg-1.0.0-r0.apk".to_string(),
+                                url: "http://example.com/pkg-1.0.0-r0.apk".to_string(),
+                                size: 2048,
+                                sha256: None,
+                            },
+                            ApkAsset {
+                                repo_owner: "owner".to_string(),
+                                repo_name: "repo".to_string(),
+                                release_id: 1,
+                                asset_id: 11,
+                                filename: "pkg-1.0.0-r0-aarch64.apk".to_string(),
+                                url: "http://example.com/pkg-1.0.0-r0-aarch64.apk".to_string(),
+                                size: 4096,
+                                sha256: Some("abc123".to_string()),
+                            },
+                        ],
+                    }])
+                })
+            });
+
+        let releases = crate::domain::prelude::PackageSource::stream_apk_releases_with_assets(
+            &mock_package_source,
+            "owner/repo",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].release_id, 1);
+        assert_eq!(releases[0].assets.len(), 2);
+        assert_eq!(releases[0].assets[0].filename, "pkg-1.0.0-r0.apk");
+        assert_eq!(releases[0].assets[1].filename, "pkg-1.0.0-r0-aarch64.apk");
+        assert_eq!(releases[0].assets[1].size, 4096);
+    }
+
+    #[tokio::test]
+    async fn should_fetch_apk_asset() {
+        use crate::domain::entity::ApkAsset;
+
+        let mut mock_package_source = MockPackageSource::new();
+        mock_package_source
+            .expect_fetch_apk()
+            .returning(|_asset| Box::pin(async { Ok(temp_file::empty()) }));
+
+        let asset = ApkAsset {
+            repo_owner: "owner".to_string(),
+            repo_name: "repo".to_string(),
+            release_id: 1,
+            asset_id: 10,
+            filename: "pkg-1.0.0-r0.apk".to_string(),
+            url: "http://example.com/pkg-1.0.0-r0.apk".to_string(),
+            size: 2048,
+            sha256: None,
+        };
+
+        let result =
+            crate::domain::prelude::PackageSource::fetch_apk(&mock_package_source, &asset).await;
+        assert!(result.is_ok());
+    }
 }

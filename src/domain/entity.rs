@@ -269,6 +269,16 @@ pub struct ReleaseWithAssets {
     pub assets: Vec<DebAsset>,
 }
 
+/// A GitHub release with its .apk assets for incremental processing.
+#[expect(dead_code, reason = "APK support entity (#63), consumed in #65")]
+#[derive(Debug, Clone)]
+pub struct ApkReleaseWithAssets {
+    pub release_id: u64,
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub assets: Vec<ApkAsset>,
+}
+
 /// An Alpine package with its metadata and source asset.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApkPackage {
