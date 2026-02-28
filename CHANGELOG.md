@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3](https://github.com/jdrouet/inapt/compare/v0.3.2...v0.3.3) - 2026-02-28
+
+### Added
+
+- *(apk)* wire APK support into application startup ([#77](https://github.com/jdrouet/inapt/pull/77))
+- *(apk)* add HTTP routes for serving APK repository ([#66](https://github.com/jdrouet/inapt/pull/66)) ([#76](https://github.com/jdrouet/inapt/pull/76))
+- *(apk)* add APK repository service with sync and index generation ([#65](https://github.com/jdrouet/inapt/pull/65)) ([#75](https://github.com/jdrouet/inapt/pull/75))
+- *(apk)* add database storage for APK packages ([#64](https://github.com/jdrouet/inapt/pull/64)) ([#73](https://github.com/jdrouet/inapt/pull/73))
+- *(apk)* extend GitHub adapter to support .apk assets ([#63](https://github.com/jdrouet/inapt/pull/63)) ([#72](https://github.com/jdrouet/inapt/pull/72))
+- *(rsa)* add RSA signing adapter for APKINDEX ([#62](https://github.com/jdrouet/inapt/pull/62)) ([#71](https://github.com/jdrouet/inapt/pull/71))
+- *(apk)* add adapter for extracting metadata from .apk files ([#70](https://github.com/jdrouet/inapt/pull/70))
+- *(apk)* add domain entities and traits for APK packages ([#69](https://github.com/jdrouet/inapt/pull/69))
+- add health check endpoint ([#52](https://github.com/jdrouet/inapt/pull/52))
+
+### Other
+
+- *(apk)* add end-to-end test with Alpine Docker container ([#68](https://github.com/jdrouet/inapt/pull/68)) ([#78](https://github.com/jdrouet/inapt/pull/78))
+- *(deps)* Bump keccak from 0.1.5 to 0.1.6 ([#58](https://github.com/jdrouet/inapt/pull/58))
+- *(deps)* Bump reqwest-retry from 0.9.0 to 0.9.1 ([#57](https://github.com/jdrouet/inapt/pull/57))
+- *(deps)* Bump flate2 from 1.1.8 to 1.1.9 ([#55](https://github.com/jdrouet/inapt/pull/55))
+- *(deps)* Bump bytes from 1.11.0 to 1.11.1 ([#54](https://github.com/jdrouet/inapt/pull/54))
+- *(deps)* Bump bollard from 0.20.0 to 0.20.1 ([#53](https://github.com/jdrouet/inapt/pull/53))
+- add contributing guidelines and apply code style fixes ([#50](https://github.com/jdrouet/inapt/pull/50))
+
 ## [0.3.2](https://github.com/jdrouet/inapt/compare/v0.3.1...v0.3.2) - 2026-01-23
 
 ### Added
