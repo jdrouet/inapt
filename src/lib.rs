@@ -9,6 +9,7 @@ mod adapter_deb;
 mod adapter_github;
 mod adapter_http_server;
 mod adapter_pgp;
+mod adapter_rsa;
 mod adapter_sqlite;
 mod adapter_worker;
 mod domain;
