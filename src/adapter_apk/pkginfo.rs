@@ -1,12 +1,3 @@
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        clippy::allow_attributes,
-        reason = "APK sync path (#65), wired in #67"
-    )
-)]
-
 use anyhow::Context;
 
 use crate::domain::entity::ApkMetadata;

@@ -17,50 +17,14 @@ pub(crate) mod prelude;
 /// and serving signed APKINDEX repositories.
 #[derive(Clone, Debug)]
 pub struct ApkRepositoryService<PS, AE, RSA, RT, APKS> {
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            clippy::allow_attributes,
-            reason = "APK sync path (#65), read in #67"
-        )
-    )]
     pub config: Arc<Config>,
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            clippy::allow_attributes,
-            reason = "APK sync path (#65), read in #67"
-        )
-    )]
     pub package_source: PS,
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            clippy::allow_attributes,
-            reason = "APK sync path (#65), read in #67"
-        )
-    )]
     pub apk_extractor: AE,
     pub rsa_signer: RSA,
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            clippy::allow_attributes,
-            reason = "APK sync path (#65), read in #67"
-        )
-    )]
     pub release_tracker: RT,
     pub apk_package_store: APKS,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "APK sync path (#65), wired in #67")
-)]
 impl<PS, AE, RSA, RT, APKS> ApkRepositoryService<PS, AE, RSA, RT, APKS>
 where
     PS: prelude::PackageSource,

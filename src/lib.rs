@@ -2,10 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 
-use crate::{
-    adapter_apk::ApkReader, adapter_deb::DebReader, domain::ApkRepositoryService,
-    domain::AptRepositoryService,
-};
+use crate::{adapter_apk::ApkReader, adapter_deb::DebReader, domain::AptRepositoryService};
 
 mod adapter_apk;
 mod adapter_deb;
@@ -51,7 +48,7 @@ impl Config {
             release_tracker: storage.clone(),
             package_store: storage.clone(),
         };
-        let apk_repository_service = ApkRepositoryService {
+        let apk_repository_service = domain::ApkRepositoryService {
             config,
             package_source: github.clone(),
             apk_extractor: ApkReader,
@@ -65,13 +62,14 @@ impl Config {
                 .http_server
                 .builder()?
                 .with_apt_repository(apt_repository_service.clone())
-                .with_apk_repository(apk_repository_service)
+                .with_apk_repository(apk_repository_service.clone())
                 .with_health_checker(storage)
                 .build()?,
             worker: self
                 .worker
                 .builder()
                 .with_apt_repository(apt_repository_service)
+                .with_apk_repository(apk_repository_service)
                 .build()?,
         })
     }
