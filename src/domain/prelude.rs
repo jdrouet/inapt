@@ -422,7 +422,7 @@ pub trait ApkPackageStore: Send + Sync + 'static {
     fn find_apk_package_by_asset_id(
         &self,
         asset_id: u64,
-    ) -> impl Future<Output = Option<ApkPackage>> + Send;
+    ) -> impl Future<Output = anyhow::Result<Option<ApkPackage>>> + Send;
 
     /// Get all APK packages for building the APKINDEX.
     fn list_all_apk_packages(&self)
@@ -446,7 +446,7 @@ mockall::mock! {
         fn find_apk_package_by_asset_id(
             &self,
             asset_id: u64,
-        ) -> impl Future<Output = Option<ApkPackage>> + Send;
+        ) -> impl Future<Output = anyhow::Result<Option<ApkPackage>>> + Send;
 
         fn list_all_apk_packages(
             &self,

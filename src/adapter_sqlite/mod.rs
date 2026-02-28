@@ -820,19 +820,16 @@ impl crate::domain::prelude::ApkPackageStore for SqliteStorage {
             otel.kind = "client"
         )
     )]
-    async fn find_apk_package_by_asset_id(&self, asset_id: u64) -> Option<ApkPackage> {
-        match sqlx::query_as::<_, SqliteWrapper<ApkPackage>>(SQL_SELECT_APK_ASSET_BY_ID)
+    async fn find_apk_package_by_asset_id(
+        &self,
+        asset_id: u64,
+    ) -> anyhow::Result<Option<ApkPackage>> {
+        let result = sqlx::query_as::<_, SqliteWrapper<ApkPackage>>(SQL_SELECT_APK_ASSET_BY_ID)
             .bind(asset_id as i64)
             .fetch_optional(&self.pool)
-            .await
-        {
-            Ok(Some(wrapper)) => Some(wrapper.into_inner()),
-            Ok(None) => None,
-            Err(err) => {
-                tracing::error!(error = ?err, asset_id, "failed to find APK package by asset_id");
-                None
-            }
-        }
+            .await?;
+
+        Ok(result.map(|w| w.into_inner()))
     }
 
     #[tracing::instrument(
@@ -1198,7 +1195,7 @@ mod tests {
         storage.insert_apk_packages(&[package]).await.unwrap();
 
         // Find by asset_id
-        let found = storage.find_apk_package_by_asset_id(200).await;
+        let found = storage.find_apk_package_by_asset_id(200).await.unwrap();
         assert!(found.is_some());
         let found = found.unwrap();
         assert_eq!(found.metadata.name, "test-apk");
@@ -1228,7 +1225,7 @@ mod tests {
         assert_eq!(found.asset.sha256, Some("sha256hash".to_string()));
 
         // Not found for different asset_id
-        let not_found = storage.find_apk_package_by_asset_id(999).await;
+        let not_found = storage.find_apk_package_by_asset_id(999).await.unwrap();
         assert!(not_found.is_none());
     }
 
@@ -1312,7 +1309,11 @@ mod tests {
 
         storage.insert_apk_packages(&[package]).await.unwrap();
 
-        let found = storage.find_apk_package_by_asset_id(300).await.unwrap();
+        let found = storage
+            .find_apk_package_by_asset_id(300)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(found.metadata.name, "minimal-apk");
         assert_eq!(found.metadata.origin, None);
         assert_eq!(found.metadata.maintainer, None);
