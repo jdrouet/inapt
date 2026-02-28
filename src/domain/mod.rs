@@ -16,6 +16,10 @@ pub(crate) mod prelude;
 /// Core domain service for synchronizing APK packages from GitHub
 /// and serving signed APKINDEX repositories.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK service (#65), wired in #67")
+)]
 pub struct ApkRepositoryService<PS, AE, RSA, RT, APKS> {
     pub config: Arc<Config>,
     pub package_source: PS,
@@ -25,6 +29,10 @@ pub struct ApkRepositoryService<PS, AE, RSA, RT, APKS> {
     pub apk_package_store: APKS,
 }
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK service (#65), wired in #67")
+)]
 impl<PS, AE, RSA, RT, APKS> ApkRepositoryService<PS, AE, RSA, RT, APKS>
 where
     PS: prelude::PackageSource,
