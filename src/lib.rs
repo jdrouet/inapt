@@ -4,6 +4,7 @@ use anyhow::Context;
 
 use crate::{adapter_deb::DebReader, domain::AptRepositoryService};
 
+mod adapter_apk;
 mod adapter_deb;
 mod adapter_github;
 mod adapter_http_server;
@@ -62,7 +63,7 @@ impl Config {
 }
 
 pub struct Application {
-    #[allow(unused, reason = "preparation")]
+    #[expect(unused, reason = "preparation")]
     github: adapter_github::Client,
     http_server: adapter_http_server::Server,
     worker: adapter_worker::Worker,
