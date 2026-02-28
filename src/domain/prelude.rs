@@ -309,3 +309,130 @@ mockall::mock! {
         fn sign(&self, data: &str) -> anyhow::Result<String>;
     }
 }
+
+// --- APK (Alpine) traits ---
+
+/// Synchronizes APK packages from upstream sources.
+pub trait ApkRepositoryWriter: Send + Sync + 'static {
+    fn synchronize(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
+/// Serves an APK repository (APKINDEX and package lookups).
+pub trait ApkRepositoryReader: Send + Sync + 'static {
+    /// Get the signed APKINDEX.tar.gz content for a given architecture.
+    fn apk_index(&self, arch: &str) -> impl Future<Output = anyhow::Result<Vec<u8>>> + Send;
+
+    /// Find an APK package by architecture and filename for download redirect.
+    fn apk_package(
+        &self,
+        arch: &str,
+        filename: &str,
+    ) -> impl Future<Output = anyhow::Result<Option<ApkPackage>>> + Send;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub ApkRepositoryService {}
+
+    impl Clone for ApkRepositoryService {
+        fn clone(&self) -> Self;
+    }
+
+    impl ApkRepositoryReader for ApkRepositoryService {
+        fn apk_index(&self, arch: &str) -> impl Future<Output = anyhow::Result<Vec<u8>>> + Send;
+
+        fn apk_package(
+            &self,
+            arch: &str,
+            filename: &str,
+        ) -> impl Future<Output = anyhow::Result<Option<ApkPackage>>> + Send;
+    }
+}
+
+/// Extracts metadata from an `.apk` file's `.PKGINFO`.
+pub trait ApkMetadataExtractor: Send + Sync + 'static {
+    /// Given an `.apk` file, extract package metadata.
+    fn extract_metadata(
+        &self,
+        path: &std::path::Path,
+    ) -> impl Future<Output = anyhow::Result<ApkMetadata>> + Send;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub ApkMetadataExtractor {}
+
+    impl Clone for ApkMetadataExtractor {
+        fn clone(&self) -> Self;
+    }
+
+    impl ApkMetadataExtractor for ApkMetadataExtractor {
+        fn extract_metadata(
+            &self,
+            path: &std::path::Path,
+        ) -> impl Future<Output = anyhow::Result<ApkMetadata>> + Send;
+    }
+}
+
+/// Stores APK packages for incremental updates.
+pub trait ApkPackageStore: Send + Sync + 'static {
+    /// Insert multiple APK packages in a single batch operation.
+    fn insert_apk_packages(
+        &self,
+        packages: &[ApkPackage],
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Find an APK package by its GitHub asset ID.
+    fn find_apk_package_by_asset_id(
+        &self,
+        asset_id: u64,
+    ) -> impl Future<Output = Option<ApkPackage>> + Send;
+
+    /// Get all APK packages for building the APKINDEX.
+    fn list_all_apk_packages(&self)
+    -> impl Future<Output = anyhow::Result<Vec<ApkPackage>>> + Send;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub ApkPackageStore {}
+
+    impl Clone for ApkPackageStore {
+        fn clone(&self) -> Self;
+    }
+
+    impl ApkPackageStore for ApkPackageStore {
+        fn insert_apk_packages(
+            &self,
+            packages: &[ApkPackage],
+        ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+        fn find_apk_package_by_asset_id(
+            &self,
+            asset_id: u64,
+        ) -> impl Future<Output = Option<ApkPackage>> + Send;
+
+        fn list_all_apk_packages(
+            &self,
+        ) -> impl Future<Output = anyhow::Result<Vec<ApkPackage>>> + Send;
+    }
+}
+
+/// Signs data with an RSA key for APK repository index signing.
+pub trait RsaSigner: Send + Sync + 'static {
+    /// Sign raw bytes and return the RSA signature.
+    fn sign(&self, data: &[u8]) -> anyhow::Result<Vec<u8>>;
+
+    /// The key filename used in the `.SIGN.RSA.{name}` tar entry.
+    fn key_name(&self) -> &str;
+}
+
+#[cfg(test)]
+mockall::mock! {
+    pub RsaSigner {}
+
+    impl RsaSigner for RsaSigner {
+        fn sign(&self, data: &[u8]) -> anyhow::Result<Vec<u8>>;
+        fn key_name(&self) -> &str;
+    }
+}
