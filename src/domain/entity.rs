@@ -270,10 +270,7 @@ pub struct ReleaseWithAssets {
 }
 
 /// A GitHub release with its .apk assets for incremental processing.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "APK support entity (#63), consumed in #65")
-)]
+#[expect(dead_code, reason = "APK support entity (#63), consumed in #65")]
 #[derive(Debug, Clone)]
 pub struct ApkReleaseWithAssets {
     pub release_id: u64,
