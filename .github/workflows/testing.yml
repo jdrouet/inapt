@@ -10,6 +10,7 @@ on:
       - "Cargo.toml"
       - "resources/**"
       - "src/**"
+      - "tests/**"
   push:
     branches:
       - main
