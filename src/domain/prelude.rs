@@ -424,7 +424,10 @@ mockall::mock! {
 }
 
 /// Signs data with an RSA key for APK repository index signing.
-#[expect(dead_code, reason = "APK support trait (#60), implemented in #62")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "APK support trait (#60), wired in #60")
+)]
 pub trait RsaSigner: Send + Sync + 'static {
     /// Sign raw bytes and return the RSA signature.
     fn sign(&self, data: &[u8]) -> anyhow::Result<Vec<u8>>;
