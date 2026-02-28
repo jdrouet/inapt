@@ -152,12 +152,28 @@ pub trait PackageSource: Send + Sync + 'static {
     ) -> impl Future<Output = anyhow::Result<Vec<ReleaseWithAssets>>> + Send;
 
     /// Download an .apk asset.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            clippy::allow_attributes,
+            reason = "APK sync path (#65), wired in #67"
+        )
+    )]
     fn fetch_apk(
         &self,
         asset: &ApkAsset,
     ) -> impl Future<Output = anyhow::Result<temp_file::TempFile>> + Send;
 
     /// Stream releases with their .apk assets for incremental processing.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            clippy::allow_attributes,
+            reason = "APK sync path (#65), wired in #67"
+        )
+    )]
     fn stream_apk_releases_with_assets(
         &self,
         repo: &str,
@@ -333,17 +349,13 @@ mockall::mock! {
 /// Synchronizes APK packages from upstream sources.
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "APK service (#65), wired in #67")
+    expect(dead_code, reason = "APK sync path (#65), wired in #67")
 )]
 pub trait ApkRepositoryWriter: Send + Sync + 'static {
     fn synchronize(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
 /// Serves an APK repository (APKINDEX and package lookups).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "APK service (#65), wired in #67")
-)]
 pub trait ApkRepositoryReader: Send + Sync + 'static {
     /// Get the signed APKINDEX.tar.gz content for a given architecture.
     fn apk_index(&self, arch: &str) -> impl Future<Output = anyhow::Result<Vec<u8>>> + Send;
@@ -378,6 +390,14 @@ mockall::mock! {
 /// Extracts metadata from an `.apk` file's `.PKGINFO`.
 pub trait ApkMetadataExtractor: Send + Sync + 'static {
     /// Given an `.apk` file, extract package metadata.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            clippy::allow_attributes,
+            reason = "APK sync path (#65), wired in #67"
+        )
+    )]
     fn extract_metadata(
         &self,
         path: &std::path::Path,
@@ -401,18 +421,30 @@ mockall::mock! {
 }
 
 /// Stores APK packages for incremental updates.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "APK support trait (#64), wired in #67")
-)]
 pub trait ApkPackageStore: Send + Sync + 'static {
     /// Insert multiple APK packages in a single batch operation.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            clippy::allow_attributes,
+            reason = "APK sync path (#64), wired in #67"
+        )
+    )]
     fn insert_apk_packages(
         &self,
         packages: &[ApkPackage],
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
     /// Find an APK package by its GitHub asset ID.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            clippy::allow_attributes,
+            reason = "APK sync path (#64), wired in #67"
+        )
+    )]
     fn find_apk_package_by_asset_id(
         &self,
         asset_id: u64,

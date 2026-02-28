@@ -7,9 +7,10 @@ use crate::adapter_http_server::{HealthCheck, ServerState};
 ///
 /// Returns 200 OK if all dependencies (database, etc.) are healthy.
 /// Returns 503 Service Unavailable if any dependency check fails.
-pub async fn handler<AR, HC>(State(state): State<ServerState<AR, HC>>) -> StatusCode
+pub async fn handler<AR, APK, HC>(State(state): State<ServerState<AR, APK, HC>>) -> StatusCode
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    APK: crate::domain::prelude::ApkRepositoryReader + Clone,
     HC: HealthCheck + Clone,
 {
     match state.health_checker.health_check().await {
@@ -27,7 +28,7 @@ mod tests {
     use axum::http::StatusCode;
 
     use crate::adapter_http_server::{HealthCheck, ServerState};
-    use crate::domain::prelude::MockAptRepositoryService;
+    use crate::domain::prelude::{MockApkRepositoryService, MockAptRepositoryService};
 
     #[derive(Clone)]
     struct MockHealthyChecker;
@@ -52,6 +53,7 @@ mod tests {
         let apt_repository = MockAptRepositoryService::new();
         let state = ServerState {
             apt_repository,
+            apk_repository: MockApkRepositoryService::new(),
             health_checker: MockHealthyChecker,
         };
         let result = super::handler(State(state)).await;
@@ -63,6 +65,7 @@ mod tests {
         let apt_repository = MockAptRepositoryService::new();
         let state = ServerState {
             apt_repository,
+            apk_repository: MockApkRepositoryService::new(),
             health_checker: MockUnhealthyChecker,
         };
         let result = super::handler(State(state)).await;

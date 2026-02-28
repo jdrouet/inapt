@@ -5,6 +5,8 @@ use axum::routing::get;
 
 use crate::adapter_http_server::{HealthCheck, ServerState};
 
+mod apk_index;
+mod apk_redirect;
 mod by_hash;
 mod health;
 mod inrelease;
@@ -14,40 +16,56 @@ mod release;
 mod release_gpg;
 mod translation;
 
-pub fn build<AR, HC>() -> axum::Router<ServerState<AR, HC>>
+pub fn build<AR, APK, HC>() -> axum::Router<ServerState<AR, APK, HC>>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    APK: crate::domain::prelude::ApkRepositoryReader + Clone,
     HC: HealthCheck + Clone,
 {
     axum::Router::new()
-        .route("/health", get(health::handler::<AR, HC>))
-        .route("/dists/stable/Release", get(release::handler::<AR, HC>))
-        .route("/dists/stable/InRelease", get(inrelease::handler::<AR, HC>))
+        .route("/health", get(health::handler::<AR, APK, HC>))
+        .route(
+            "/dists/stable/Release",
+            get(release::handler::<AR, APK, HC>),
+        )
+        .route(
+            "/dists/stable/InRelease",
+            get(inrelease::handler::<AR, APK, HC>),
+        )
         .route(
             "/dists/stable/Release.gpg",
-            get(release_gpg::handler::<AR, HC>),
+            get(release_gpg::handler::<AR, APK, HC>),
         )
         .route(
             "/dists/stable/main/binary-{arch}/Packages",
-            get(packages::handler::<AR, HC>),
+            get(packages::handler::<AR, APK, HC>),
         )
         .route(
             "/dists/stable/main/binary-{arch}/Packages.gz",
-            get(packages::gz_handler::<AR, HC>),
+            get(packages::gz_handler::<AR, APK, HC>),
         )
         .route(
             "/dists/stable/main/binary-{arch}/by-hash/SHA256/{hash}",
-            get(by_hash::handler::<AR, HC>),
+            get(by_hash::handler::<AR, APK, HC>),
         )
         .route(
             "/pool/main/{p}/{pkg}/{file}",
-            get(pool_redirect::handler::<AR, HC>),
+            get(pool_redirect::handler::<AR, APK, HC>),
         )
         // Translation files (i18n) - serve actual English descriptions
         // Use a single route with filename capture to avoid Axum's "one parameter per segment" limitation
         .route(
             "/dists/stable/main/i18n/{filename}",
-            get(translation::handler::<AR, HC>),
+            get(translation::handler::<AR, APK, HC>),
+        )
+        // APK repository routes
+        .route(
+            "/{arch}/APKINDEX.tar.gz",
+            get(apk_index::handler::<AR, APK, HC>),
+        )
+        .route(
+            "/{arch}/{filename}",
+            get(apk_redirect::handler::<AR, APK, HC>),
         )
 }
 
@@ -84,7 +102,7 @@ impl IntoResponse for ApiError {
 #[cfg(test)]
 mod tests {
     use crate::adapter_http_server::HealthCheck;
-    use crate::domain::prelude::MockAptRepositoryService;
+    use crate::domain::prelude::{MockApkRepositoryService, MockAptRepositoryService};
 
     #[derive(Clone)]
     struct MockHealthCheck;
@@ -101,6 +119,7 @@ mod tests {
     #[test]
     fn should_build_router_without_panicking() {
         // This will panic if any route pattern is invalid
-        let _router = super::build::<MockAptRepositoryService, MockHealthCheck>();
+        let _router =
+            super::build::<MockAptRepositoryService, MockApkRepositoryService, MockHealthCheck>();
     }
 }

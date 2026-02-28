@@ -17,10 +17,6 @@ fn default_key_name() -> String {
     "inapt.rsa.pub".to_string()
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "RSA adapter (#62), wired in #67")
-)]
 impl Config {
     fn generate_private_key(&self) -> anyhow::Result<()> {
         let mut rng = rand::thread_rng();

@@ -68,6 +68,14 @@ const SQL_SELECT_ALL_DEB_ASSETS: &str = r#"
     FROM deb_assets
 "#;
 
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        clippy::allow_attributes,
+        reason = "APK sync path (#64), wired in #67"
+    )
+)]
 const SQL_INSERT_APK_ASSETS_BATCH: &str = r#"
     INSERT OR REPLACE INTO apk_assets (
         id, release_id, repo_owner, repo_name, filename, url, size, sha256,
@@ -76,6 +84,14 @@ const SQL_INSERT_APK_ASSETS_BATCH: &str = r#"
         pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash
     ) "#;
 
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        clippy::allow_attributes,
+        reason = "APK sync path (#64), wired in #67"
+    )
+)]
 const SQL_SELECT_APK_ASSET_BY_ID: &str = r#"
     SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
            pkg_name, pkg_version, pkg_architecture, pkg_installed_size,
@@ -84,10 +100,6 @@ const SQL_SELECT_APK_ASSET_BY_ID: &str = r#"
     FROM apk_assets WHERE id = ?
 "#;
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "APK support (#64), wired in #67")
-)]
 const SQL_SELECT_ALL_APK_ASSETS: &str = r#"
     SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
            pkg_name, pkg_version, pkg_architecture, pkg_installed_size,

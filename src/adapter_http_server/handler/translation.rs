@@ -74,12 +74,13 @@ fn parse_translation_filename(filename: &str) -> Option<(&str, Compression)> {
 /// Parses the filename to determine language and compression format,
 /// then returns the appropriate response.
 #[tracing::instrument(skip_all)]
-pub async fn handler<AR, HC>(
-    State(state): State<ServerState<AR, HC>>,
+pub async fn handler<AR, APK, HC>(
+    State(state): State<ServerState<AR, APK, HC>>,
     Path(filename): Path<String>,
 ) -> Result<Response, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    APK: crate::domain::prelude::ApkRepositoryReader + Clone,
     HC: HealthCheck + Clone,
 {
     let Some((lang, compression)) = parse_translation_filename(&filename) else {
@@ -142,7 +143,10 @@ mod tests {
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
 
-    use crate::{adapter_http_server::ServerState, domain::prelude::MockAptRepositoryService};
+    use crate::{
+        adapter_http_server::ServerState,
+        domain::prelude::{MockApkRepositoryService, MockAptRepositoryService},
+    };
 
     #[derive(Clone)]
     struct MockHealthCheck;
@@ -186,6 +190,7 @@ mod tests {
         let response = handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path("Translation-en".to_string()),
@@ -209,6 +214,7 @@ mod tests {
         let response = handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path("Translation-fr".to_string()),
@@ -235,6 +241,7 @@ mod tests {
         let response = handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path("Translation-en.gz".to_string()),
@@ -258,6 +265,7 @@ mod tests {
         let response = handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path("Translation-fr.bz2".to_string()),
@@ -281,6 +289,7 @@ mod tests {
         let response = handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path("Translation-de.xz".to_string()),
@@ -303,6 +312,7 @@ mod tests {
         let response = handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path("Invalid".to_string()),
@@ -323,6 +333,7 @@ mod tests {
         let response = handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path("Translation-en".to_string()),

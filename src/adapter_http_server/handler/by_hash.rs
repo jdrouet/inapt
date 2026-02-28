@@ -14,12 +14,13 @@ pub struct ByHashParams {
     hash: String,
 }
 
-pub async fn handler<AR, HC>(
-    State(state): State<ServerState<AR, HC>>,
+pub async fn handler<AR, APK, HC>(
+    State(state): State<ServerState<AR, APK, HC>>,
     Path(params): Path<ByHashParams>,
 ) -> Result<impl IntoResponse, ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    APK: crate::domain::prelude::ApkRepositoryReader + Clone,
     HC: HealthCheck + Clone,
 {
     let Some(hash_match) = state
@@ -76,7 +77,9 @@ mod tests {
     use axum::response::IntoResponse;
 
     use crate::adapter_http_server::{HealthCheck, ServerState};
-    use crate::domain::prelude::{ArchitectureHashMatch, MockAptRepositoryService};
+    use crate::domain::prelude::{
+        ArchitectureHashMatch, MockApkRepositoryService, MockAptRepositoryService,
+    };
 
     use super::ByHashParams;
 
@@ -113,6 +116,7 @@ mod tests {
         let res = super::handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(ByHashParams {
@@ -155,6 +159,7 @@ mod tests {
         let res = super::handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(ByHashParams {
@@ -184,6 +189,7 @@ mod tests {
         let result = super::handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(ByHashParams {
@@ -216,6 +222,7 @@ mod tests {
         let result = super::handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(ByHashParams {

@@ -5,12 +5,13 @@ use flate2::write::GzEncoder;
 
 use crate::adapter_http_server::{HealthCheck, ServerState};
 
-pub async fn handler<AR, HC>(
-    State(state): State<ServerState<AR, HC>>,
+pub async fn handler<AR, APK, HC>(
+    State(state): State<ServerState<AR, APK, HC>>,
     Path(arch): Path<String>,
 ) -> Result<String, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    APK: crate::domain::prelude::ApkRepositoryReader + Clone,
     HC: HealthCheck + Clone,
 {
     state
@@ -51,12 +52,13 @@ where
 // Size: 23456
 // SHA256: 2222222222222222222222222222222222222222222222222222222222222222
 
-pub async fn gz_handler<AR, HC>(
-    State(state): State<ServerState<AR, HC>>,
+pub async fn gz_handler<AR, APK, HC>(
+    State(state): State<ServerState<AR, APK, HC>>,
     Path(arch): Path<String>,
 ) -> Result<Vec<u8>, super::ApiError>
 where
     AR: crate::domain::prelude::AptRepositoryReader + Clone,
+    APK: crate::domain::prelude::ApkRepositoryReader + Clone,
     HC: HealthCheck + Clone,
 {
     let data = handler(State(state), Path(arch)).await?;
@@ -77,7 +79,7 @@ mod tests {
 
     use crate::{
         adapter_http_server::{HealthCheck, ServerState},
-        domain::prelude::MockAptRepositoryService,
+        domain::prelude::{MockApkRepositoryService, MockAptRepositoryService},
     };
 
     #[derive(Clone)]
@@ -102,6 +104,7 @@ mod tests {
         let res = super::handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(String::from("amd64")),
@@ -121,6 +124,7 @@ mod tests {
         let res = super::handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(String::from("amd64")),
@@ -142,6 +146,7 @@ mod tests {
         let res = super::gz_handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(String::from("amd64")),
@@ -164,6 +169,7 @@ mod tests {
         let res = super::gz_handler(
             State(ServerState {
                 apt_repository,
+                apk_repository: MockApkRepositoryService::new(),
                 health_checker: MockHealthCheck,
             }),
             Path(String::from("amd64")),

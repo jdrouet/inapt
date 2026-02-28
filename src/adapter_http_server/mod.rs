@@ -32,30 +32,40 @@ impl Config {
         DEFAULT_PORT
     }
 
-    pub fn builder<AR, HC>(self) -> anyhow::Result<ServerBuilder<AR, HC>> {
+    pub fn builder<AR, APK, HC>(self) -> anyhow::Result<ServerBuilder<AR, APK, HC>> {
         Ok(ServerBuilder {
             address: std::net::SocketAddr::from((self.address, self.port)),
             apt_repository: None,
+            apk_repository: None,
             health_checker: None,
         })
     }
 }
 
 #[derive(Debug)]
-pub struct ServerBuilder<AR, HC> {
+pub struct ServerBuilder<AR, APK, HC> {
     address: std::net::SocketAddr,
     apt_repository: Option<AR>,
+    apk_repository: Option<APK>,
     health_checker: Option<HC>,
 }
 
-impl<AR, HC> ServerBuilder<AR, HC>
+impl<AR, APK, HC> ServerBuilder<AR, APK, HC>
 where
     AR: Clone + crate::domain::prelude::AptRepositoryReader,
+    APK: Clone + crate::domain::prelude::ApkRepositoryReader,
     HC: Clone + HealthCheck,
 {
     pub fn with_apt_repository(self, value: AR) -> Self {
         Self {
             apt_repository: Some(value),
+            ..self
+        }
+    }
+
+    pub fn with_apk_repository(self, value: APK) -> Self {
+        Self {
+            apk_repository: Some(value),
             ..self
         }
     }
@@ -74,6 +84,9 @@ where
                 apt_repository: self
                     .apt_repository
                     .ok_or_else(|| anyhow::anyhow!("apt_repository service not defined"))?,
+                apk_repository: self
+                    .apk_repository
+                    .ok_or_else(|| anyhow::anyhow!("apk_repository service not defined"))?,
                 health_checker: self
                     .health_checker
                     .ok_or_else(|| anyhow::anyhow!("health_checker not defined"))?,
@@ -102,11 +115,13 @@ impl Server {
 }
 
 #[derive(Clone)]
-pub(crate) struct ServerState<AR, HC>
+pub(crate) struct ServerState<AR, APK, HC>
 where
     AR: Clone + crate::domain::prelude::AptRepositoryReader,
+    APK: Clone + crate::domain::prelude::ApkRepositoryReader,
     HC: Clone + HealthCheck,
 {
     pub(crate) apt_repository: AR,
+    pub(crate) apk_repository: APK,
     pub(crate) health_checker: HC,
 }
