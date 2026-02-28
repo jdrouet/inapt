@@ -270,7 +270,6 @@ pub struct ReleaseWithAssets {
 }
 
 /// A GitHub release with its .apk assets for incremental processing.
-#[expect(dead_code, reason = "APK support entity (#63), consumed in #65")]
 #[derive(Debug, Clone)]
 pub struct ApkReleaseWithAssets {
     pub release_id: u64,
@@ -286,10 +285,6 @@ pub struct ApkPackage {
     pub asset: ApkAsset,
 }
 
-#[expect(
-    dead_code,
-    reason = "foundational type for APK support (#60), consumers in #61-#68"
-)]
 impl ApkPackage {
     pub fn serialize(&self) -> SerializedApkIndexEntry<'_> {
         SerializedApkIndexEntry(self)

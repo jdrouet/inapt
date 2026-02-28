@@ -19,7 +19,7 @@ fn default_key_name() -> String {
 
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "RSA adapter (#62), wired in APK service (#60)")
+    expect(dead_code, reason = "RSA adapter (#62), wired in #67")
 )]
 impl Config {
     fn generate_private_key(&self) -> anyhow::Result<()> {
@@ -66,10 +66,6 @@ impl Config {
 }
 
 #[derive(Clone)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "RSA adapter (#62), wired in APK service (#60)")
-)]
 pub struct RsaClient {
     private_key: RsaPrivateKey,
     key_name: String,
