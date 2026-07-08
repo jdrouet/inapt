@@ -47,3 +47,87 @@ impl PGPCipher for super::PGPClient {
         Ok(String::from_utf8_lossy(sink.buffer()).to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use sequoia_openpgp::cert::CertBuilder;
+    use sequoia_openpgp::parse::Parse;
+    use sequoia_openpgp::parse::stream::{
+        MessageLayer, MessageStructure, VerificationHelper, VerifierBuilder,
+    };
+    use sequoia_openpgp::policy::StandardPolicy;
+
+    use crate::domain::prelude::PGPCipher;
+
+    struct Helper<'a> {
+        cert: &'a sequoia_openpgp::Cert,
+    }
+
+    impl<'a> VerificationHelper for Helper<'a> {
+        fn get_certs(
+            &mut self,
+            _ids: &[sequoia_openpgp::KeyHandle],
+        ) -> sequoia_openpgp::Result<Vec<sequoia_openpgp::Cert>> {
+            Ok(vec![self.cert.clone()])
+        }
+
+        fn check(&mut self, structure: MessageStructure) -> sequoia_openpgp::Result<()> {
+            let mut good = false;
+            for layer in structure.into_iter() {
+                if let MessageLayer::SignatureGroup { results } = layer {
+                    for r in results {
+                        if r.is_ok() {
+                            good = true;
+                        }
+                    }
+                }
+            }
+            if good {
+                Ok(())
+            } else {
+                anyhow::bail!("no valid signature")
+            }
+        }
+    }
+
+    #[test]
+    fn should_produce_verifiable_cleartext_signed_document() {
+        let (cert, _) = CertBuilder::new()
+            .set_validity_period(None)
+            .add_signing_subkey()
+            .generate()
+            .unwrap();
+
+        let policy = StandardPolicy::new();
+        let key = cert
+            .keys()
+            .secret()
+            .with_policy(&policy, None)
+            .alive()
+            .revoked(false)
+            .for_signing()
+            .secret()
+            .next()
+            .unwrap();
+        let keypair = key.key().clone().into_keypair().unwrap();
+        let client = super::super::PGPClient { keypair };
+
+        let body = "Origin: inapt\nLabel: inapt\nSuite: stable\nComponents: main\n";
+
+        let out = client.sign_cleartext(body).unwrap();
+
+        assert!(out.starts_with("-----BEGIN PGP SIGNED MESSAGE-----"));
+        assert!(out.contains("Hash:"));
+        assert!(out.contains("-----BEGIN PGP SIGNATURE-----"));
+
+        let mut verifier = VerifierBuilder::from_bytes(out.as_bytes())
+            .unwrap()
+            .with_policy(&policy, None, Helper { cert: &cert })
+            .unwrap();
+        let mut recovered = Vec::new();
+        verifier.read_to_end(&mut recovered).unwrap();
+        assert_eq!(String::from_utf8(recovered).unwrap(), body);
+    }
+}
