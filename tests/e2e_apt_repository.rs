@@ -361,13 +361,20 @@ async fn run_apt_client_test(
         )
         .await;
 
+    let public_key_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/public-key.pem");
+
     let host_config = HostConfig {
+        binds: Some(vec![format!(
+            "{}:/etc/apt/keyrings/inapt.asc:ro",
+            public_key_path.to_string_lossy()
+        )]),
         network_mode: Some(network_name.to_string()),
         ..Default::default()
     };
 
     // Create a script that:
-    // 1. Adds the inapt repository (with trusted=yes to bypass GPG verification for testing)
+    // 1. Adds the inapt repository, verifying it against the repo's signing key
     // 2. Runs apt-get update
     // 3. Verifies packages are available
     let test_script = format!(
@@ -376,16 +383,16 @@ set -e
 
 echo "=== Starting APT client test ==="
 
-# Add the repository with trusted=yes (bypasses GPG for testing purposes)
+# Add the repository, verified against the repo signing key
 echo "Adding inapt repository..."
-echo "deb [trusted=yes] http://{}:3000 stable main" > /etc/apt/sources.list.d/inapt.list
+echo "deb [signed-by=/etc/apt/keyrings/inapt.asc] http://{}:3000 stable main" > /etc/apt/sources.list.d/inapt.list
 
 # Show the sources list
 echo "Repository configuration:"
 cat /etc/apt/sources.list.d/inapt.list
 
 # Run apt-get update
-echo "Running apt-get update..."
+echo "Verifying signed repository (no trusted=yes)..."
 apt-get update 2>&1
 
 # Verify the inapt repository was accessed by checking if packages are available
