@@ -921,6 +921,39 @@ SHA256:
         }
     }
 
+    /// With no architectures the checksum sections are omitted entirely; the
+    /// output must still be a single stanza of header fields ending in exactly
+    /// one trailing newline (no dangling blank line).
+    #[test]
+    fn release_metadata_without_architectures_is_a_single_stanza() {
+        let value = entity::ReleaseMetadata {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            date: chrono::DateTime::from_timestamp(1286705410, 0).unwrap(),
+            architectures: Vec::default(),
+            components: vec!["main".into()],
+            description: "Test repo".into(),
+            translation: Default::default(),
+        };
+        let serialized = value.serialize().to_string();
+
+        assert!(
+            !serialized.contains("\n\n"),
+            "empty-architectures Release must have no blank line, got:\n{serialized}"
+        );
+        assert!(
+            !serialized.contains("MD5Sum:") && !serialized.contains("SHA256:"),
+            "empty-architectures Release must omit the checksum sections"
+        );
+        assert!(
+            serialized.ends_with("Description: Test repo\n"),
+            "empty-architectures Release must end with the last header field and one newline"
+        );
+    }
+
     /// Minimal deb822 parser: returns the indented continuation lines (the
     /// checksum entries) that follow a `field:` line within the first stanza.
     /// Stops at a blank line (stanza boundary) or the next unindented field.
