@@ -57,7 +57,7 @@ temp-file = "0.1"
 thiserror = "2.0"
 tokio = { version = "1.48", default-features = false, features = ["fs", "macros", "net", "rt-multi-thread"] }
 toml = "1.0"
-tower-http = { version = "0.6", features = ["trace"] }
+tower-http = { version = "0.7", features = ["trace"] }
 tracing = { version = "0.1" }
 tracing-opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
@@ -70,9 +70,9 @@ e2e-docker = []
 
 [dev-dependencies]
 anyhow = "1.0"
-bollard = "0.20"
+bollard = "0.21"
 bytes = "1"
-mockall = "0.14"
+mockall = "0.15"
 similar-asserts = "1.7"
 tempfile = "3"
 walkdir = "2"
