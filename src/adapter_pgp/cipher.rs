@@ -1,50 +1,50 @@
 use anyhow::Context;
 use sequoia_openpgp::serialize::stream::{Armorer, Message, Signer};
-use std::io::{BufReader, BufWriter};
+use std::io::BufReader;
 
 use crate::domain::prelude::PGPCipher;
 
 impl PGPCipher for super::PGPClient {
     fn sign(&self, data: &str) -> anyhow::Result<String> {
-        let mut sink = BufWriter::new(Vec::new());
+        let mut sink = Vec::new();
+        {
+            let message = Message::new(&mut sink);
+            let message = Armorer::new(message)
+                .kind(sequoia_openpgp::armor::Kind::Signature)
+                .build()
+                .context("unable to build armored message")?;
 
-        let message = Message::new(&mut sink);
-        let message = Armorer::new(message)
-            .kind(sequoia_openpgp::armor::Kind::Signature)
-            .build()
-            .context("unable to build armored message")?;
+            let mut signer = Signer::new(message, self.keypair.clone())
+                .context("unable to create signer")?
+                .detached()
+                .build()
+                .context("unable to create detached signer")?;
 
-        let mut signer = Signer::new(message, self.keypair.clone())
-            .context("unable to create signer")?
-            .detached()
-            .build()
-            .context("unable to create detached signer")?;
-
-        let mut reader = BufReader::new(data.as_bytes());
-        std::io::copy(&mut reader, &mut signer).context("unable to copy data to signer")?;
-        signer.finalize().context("unable to finalize")?;
-
-        Ok(String::from_utf8_lossy(sink.buffer()).to_string())
+            let mut reader = BufReader::new(data.as_bytes());
+            std::io::copy(&mut reader, &mut signer).context("unable to copy data to signer")?;
+            signer.finalize().context("unable to finalize")?;
+        }
+        Ok(String::from_utf8_lossy(&sink).to_string())
     }
 
     fn sign_cleartext(&self, data: &str) -> anyhow::Result<String> {
-        let mut sink = std::io::BufWriter::new(Vec::new());
+        let mut sink = Vec::new();
+        {
+            let message = Message::new(&mut sink);
+            // Cleartext mode emits the full Cleartext Signature Framework
+            // document and does its own ASCII armoring, so do NOT wrap it in
+            // an Armorer (unlike the detached `sign` path).
+            let mut signer = Signer::new(message, self.keypair.clone())
+                .context("unable to create signer")?
+                .cleartext()
+                .build()
+                .context("unable to create cleartext signer")?;
 
-        let message = Message::new(&mut sink);
-        // Cleartext mode emits the full Cleartext Signature Framework
-        // document and does its own ASCII armoring, so do NOT wrap it in
-        // an Armorer (unlike the detached `sign` path).
-        let mut signer = Signer::new(message, self.keypair.clone())
-            .context("unable to create signer")?
-            .cleartext()
-            .build()
-            .context("unable to create cleartext signer")?;
-
-        let mut reader = BufReader::new(data.as_bytes());
-        std::io::copy(&mut reader, &mut signer).context("unable to copy data to signer")?;
-        signer.finalize().context("unable to finalize")?;
-
-        Ok(String::from_utf8_lossy(sink.buffer()).to_string())
+            let mut reader = BufReader::new(data.as_bytes());
+            std::io::copy(&mut reader, &mut signer).context("unable to copy data to signer")?;
+            signer.finalize().context("unable to finalize")?;
+        }
+        Ok(String::from_utf8_lossy(&sink).to_string())
     }
 }
 
@@ -114,7 +114,13 @@ mod tests {
         let keypair = key.key().clone().into_keypair().unwrap();
         let client = super::super::PGPClient { keypair };
 
-        let body = "Origin: inapt\nLabel: inapt\nSuite: stable\nComponents: main\n";
+        let mut body = String::from(
+            "Origin: inapt\nLabel: inapt\nSuite: stable\nComponents: main\n-leading dash line\n",
+        );
+        for i in 0..500 {
+            body.push_str(&format!("Package-{i}: 0123456789abcdef0123456789abcdef\n"));
+        }
+        let body = body.as_str();
 
         let out = client.sign_cleartext(body).unwrap();
 
