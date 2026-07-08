@@ -331,15 +331,15 @@ where
         Ok(self.release_storage.find_latest_release().await)
     }
 
-    /// Get the signed Packages file content for a given architecture.
+    /// Get the InRelease document: the Release metadata as an OpenPGP cleartext-signed message.
     async fn signed_release_metadata(&self) -> anyhow::Result<Option<String>> {
         let Some(metadata) = self.release_metadata().await? else {
             return Ok(None);
         };
 
         let metadata = metadata.serialize().to_string();
-        let signature = self.pgp_cipher.sign(metadata.as_str())?;
-        Ok(Some(format!("{metadata}\n\n{signature}\n")))
+        let signed = self.pgp_cipher.sign_cleartext(metadata.as_str())?;
+        Ok(Some(signed))
     }
 
     async fn release_gpg_signature(&self) -> anyhow::Result<Option<String>> {
@@ -1288,6 +1288,66 @@ SHA256:
         assert!(result.is_ok());
         let signature = result.unwrap().unwrap();
         assert_eq!(signature, "SIGNATURE");
+    }
+
+    #[tokio::test]
+    async fn should_return_cleartext_signed_inrelease() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+
+        let mut mock_release_store = MockReleaseStore::new();
+        let release_meta = crate::domain::entity::ReleaseMetadata {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            date: chrono::Utc::now(),
+            architectures: vec![],
+            components: vec!["main".to_string()],
+            description: "Test repo".into(),
+            translation: Default::default(),
+        };
+        mock_release_store
+            .expect_find_latest_release()
+            .returning(move || {
+                let release_meta = release_meta.clone();
+                Box::pin(async move { Some(release_meta) })
+            });
+
+        let mut mock_pgp_cipher = MockPGPCipher::new();
+        mock_pgp_cipher.expect_sign_cleartext().returning(|_| {
+            Ok(
+                "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nBODY\n-----BEGIN PGP SIGNATURE-----\n\nSIG\n-----END PGP SIGNATURE-----\n"
+                    .to_string(),
+            )
+        });
+
+        let service = AptRepositoryService {
+            config,
+            clock: PhantomData::<UniqueClock>,
+            package_source: MockPackageSource::new(),
+            release_storage: mock_release_store,
+            deb_extractor: MockDebMetadataExtractor::new(),
+            pgp_cipher: mock_pgp_cipher,
+            release_tracker: MockReleaseTracker::new(),
+            package_store: MockPackageStore::new(),
+        };
+        let result =
+            crate::domain::prelude::AptRepositoryReader::signed_release_metadata(&service).await;
+        assert!(result.is_ok());
+        let signed = result.unwrap().unwrap();
+        assert_eq!(
+            signed,
+            "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nBODY\n-----BEGIN PGP SIGNATURE-----\n\nSIG\n-----END PGP SIGNATURE-----\n"
+        );
     }
 
     #[tokio::test]

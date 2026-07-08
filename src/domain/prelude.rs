@@ -19,7 +19,7 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
         &self,
     ) -> impl Future<Output = anyhow::Result<Option<ReleaseMetadata>>> + Send;
 
-    /// Get the signed Packages file content for a given architecture.
+    /// Get the InRelease document: the Release metadata as an OpenPGP cleartext-signed message.
     fn signed_release_metadata(
         &self,
     ) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
@@ -85,7 +85,7 @@ mockall::mock! {
         /// Get the Release metadata for the repository.
         fn release_metadata(&self) -> impl Future<Output = anyhow::Result<Option<ReleaseMetadata>>> + Send;
 
-        /// Get the signed Packages file content for a given architecture.
+        /// Get the InRelease document: the Release metadata as an OpenPGP cleartext-signed message.
         fn signed_release_metadata(&self) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
 
         /// Get the signature of the Release file.
@@ -319,6 +319,11 @@ mockall::mock! {
 
 pub trait PGPCipher: Send + Sync + 'static {
     fn sign(&self, data: &str) -> anyhow::Result<String>;
+
+    /// Produce a full OpenPGP Cleartext Signature Framework document
+    /// (BEGIN PGP SIGNED MESSAGE header, Hash armor header, dash-escaped
+    /// body, and the armored signature) for the given data.
+    fn sign_cleartext(&self, data: &str) -> anyhow::Result<String>;
 }
 
 #[cfg(test)]
@@ -327,6 +332,7 @@ mockall::mock! {
 
     impl PGPCipher for PGPCipher {
         fn sign(&self, data: &str) -> anyhow::Result<String>;
+        fn sign_cleartext(&self, data: &str) -> anyhow::Result<String>;
     }
 }
 
