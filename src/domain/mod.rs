@@ -338,8 +338,8 @@ where
         };
 
         let metadata = metadata.serialize().to_string();
-        let signature = self.pgp_cipher.sign(metadata.as_str())?;
-        Ok(Some(format!("{metadata}\n\n{signature}\n")))
+        let signed = self.pgp_cipher.sign_cleartext(metadata.as_str())?;
+        Ok(Some(signed))
     }
 
     async fn release_gpg_signature(&self) -> anyhow::Result<Option<String>> {

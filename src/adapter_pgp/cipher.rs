@@ -26,4 +26,24 @@ impl PGPCipher for super::PGPClient {
 
         Ok(String::from_utf8_lossy(sink.buffer()).to_string())
     }
+
+    fn sign_cleartext(&self, data: &str) -> anyhow::Result<String> {
+        let mut sink = std::io::BufWriter::new(Vec::new());
+
+        let message = Message::new(&mut sink);
+        // Cleartext mode emits the full Cleartext Signature Framework
+        // document and does its own ASCII armoring, so do NOT wrap it in
+        // an Armorer (unlike the detached `sign` path).
+        let mut signer = Signer::new(message, self.keypair.clone())
+            .context("unable to create signer")?
+            .cleartext()
+            .build()
+            .context("unable to create cleartext signer")?;
+
+        let mut reader = BufReader::new(data.as_bytes());
+        std::io::copy(&mut reader, &mut signer).context("unable to copy data to signer")?;
+        signer.finalize().context("unable to finalize")?;
+
+        Ok(String::from_utf8_lossy(sink.buffer()).to_string())
+    }
 }

@@ -319,6 +319,11 @@ mockall::mock! {
 
 pub trait PGPCipher: Send + Sync + 'static {
     fn sign(&self, data: &str) -> anyhow::Result<String>;
+
+    /// Produce a full OpenPGP Cleartext Signature Framework document
+    /// (BEGIN PGP SIGNED MESSAGE header, Hash armor header, dash-escaped
+    /// body, and the armored signature) for the given data.
+    fn sign_cleartext(&self, data: &str) -> anyhow::Result<String>;
 }
 
 #[cfg(test)]
@@ -327,6 +332,7 @@ mockall::mock! {
 
     impl PGPCipher for PGPCipher {
         fn sign(&self, data: &str) -> anyhow::Result<String>;
+        fn sign_cleartext(&self, data: &str) -> anyhow::Result<String>;
     }
 }
 
