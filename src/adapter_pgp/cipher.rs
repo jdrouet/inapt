@@ -55,7 +55,8 @@ mod tests {
     use sequoia_openpgp::cert::CertBuilder;
     use sequoia_openpgp::parse::Parse;
     use sequoia_openpgp::parse::stream::{
-        MessageLayer, MessageStructure, VerificationHelper, VerifierBuilder,
+        DetachedVerifierBuilder, MessageLayer, MessageStructure, VerificationHelper,
+        VerifierBuilder,
     };
     use sequoia_openpgp::policy::StandardPolicy;
 
@@ -135,5 +136,47 @@ mod tests {
         let mut recovered = Vec::new();
         verifier.read_to_end(&mut recovered).unwrap();
         assert_eq!(String::from_utf8(recovered).unwrap(), body);
+    }
+
+    #[test]
+    fn should_produce_verifiable_detached_signature() {
+        let (cert, _) = CertBuilder::new()
+            .set_validity_period(None)
+            .add_signing_subkey()
+            .generate()
+            .unwrap();
+
+        let policy = StandardPolicy::new();
+        let key = cert
+            .keys()
+            .secret()
+            .with_policy(&policy, None)
+            .alive()
+            .revoked(false)
+            .for_signing()
+            .secret()
+            .next()
+            .unwrap();
+        let keypair = key.key().clone().into_keypair().unwrap();
+        let client = super::super::PGPClient { keypair };
+
+        let mut body = String::from(
+            "Origin: inapt\nLabel: inapt\nSuite: stable\nComponents: main\n-leading dash line\n",
+        );
+        for i in 0..500 {
+            body.push_str(&format!("Package-{i}: 0123456789abcdef0123456789abcdef\n"));
+        }
+        let body = body.as_str();
+
+        let sig = client.sign(body).unwrap();
+
+        assert!(sig.starts_with("-----BEGIN PGP SIGNATURE-----"));
+        assert!(sig.contains("-----END PGP SIGNATURE-----"));
+
+        let mut verifier = DetachedVerifierBuilder::from_bytes(sig.as_bytes())
+            .unwrap()
+            .with_policy(&policy, None, Helper { cert: &cert })
+            .unwrap();
+        verifier.verify_bytes(body.as_bytes()).unwrap();
     }
 }
