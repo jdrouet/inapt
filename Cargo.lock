@@ -3766,9 +3766,9 @@ dependencies = [
 
 [[package]]
 name = "temp-file"
-version = "0.1.9"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5ff282c3f91797f0acb021f3af7fffa8a78601f0f2fd0a9f79ee7dcf9a9af9e"
+checksum = "e08eac0f10a143ffa8883ff5964642eef36d867436cc389812c32790c778105f"
 
 [[package]]
 name = "tempfile"
