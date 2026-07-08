@@ -331,7 +331,7 @@ where
         Ok(self.release_storage.find_latest_release().await)
     }
 
-    /// Get the signed Packages file content for a given architecture.
+    /// Get the InRelease document: the Release metadata as an OpenPGP cleartext-signed message.
     async fn signed_release_metadata(&self) -> anyhow::Result<Option<String>> {
         let Some(metadata) = self.release_metadata().await? else {
             return Ok(None);

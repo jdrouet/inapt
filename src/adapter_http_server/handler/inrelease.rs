@@ -28,13 +28,18 @@ where
 //
 // ## Format
 //
-// The InRelease file is a concatenation of:
-// 1. The plain text Release file (as described previously).
-// 2. A PGP (GPG) signature block, in ASCII-armored format, immediately following the Release content.
+// InRelease is a single OpenPGP Cleartext Signature Framework (CSF) document:
+// 1. A `-----BEGIN PGP SIGNED MESSAGE-----` header line.
+// 2. A `Hash:` armor header naming the hash algorithm used for the signature.
+// 3. The Release file content, dash-escaped (lines starting with `-` are prefixed with `- `).
+// 4. An inline `-----BEGIN PGP SIGNATURE-----` / `-----END PGP SIGNATURE-----` block.
 //
 // ### Example Structure
 //
-// ```/dev/null/InRelease#L1-20
+// ```/dev/null/InRelease#L1-24
+// -----BEGIN PGP SIGNED MESSAGE-----
+// Hash: SHA512
+//
 // Origin: MyRepo
 // Label: MyRepo
 // Suite: stable
@@ -57,8 +62,10 @@ where
 // -----END PGP SIGNATURE-----
 // ```
 //
-// - The signature is generated over the exact contents of the Release file (everything before the `-----BEGIN PGP SIGNATURE-----` line).
-// - The signature is typically created using a detached, clear-signed method (`gpg --clearsign`).
+// - The signature covers the canonicalized Release body, not the literal on-wire bytes: verifiers reverse the dash-escaping and
+//   canonicalize line endings (and strip trailing whitespace) before hashing, so the recovered body matches the plain Release file.
+// - This differs from the separate, detached `Release.gpg` file: with InRelease, clients verify the metadata and its signature in a single
+//   request instead of fetching and cross-checking two files.
 
 #[cfg(test)]
 mod tests {

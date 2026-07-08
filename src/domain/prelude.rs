@@ -19,7 +19,7 @@ pub trait AptRepositoryReader: Send + Sync + 'static {
         &self,
     ) -> impl Future<Output = anyhow::Result<Option<ReleaseMetadata>>> + Send;
 
-    /// Get the signed Packages file content for a given architecture.
+    /// Get the InRelease document: the Release metadata as an OpenPGP cleartext-signed message.
     fn signed_release_metadata(
         &self,
     ) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
@@ -85,7 +85,7 @@ mockall::mock! {
         /// Get the Release metadata for the repository.
         fn release_metadata(&self) -> impl Future<Output = anyhow::Result<Option<ReleaseMetadata>>> + Send;
 
-        /// Get the signed Packages file content for a given architecture.
+        /// Get the InRelease document: the Release metadata as an OpenPGP cleartext-signed message.
         fn signed_release_metadata(&self) -> impl Future<Output = anyhow::Result<Option<String>>> + Send;
 
         /// Get the signature of the Release file.
