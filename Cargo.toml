@@ -73,7 +73,7 @@ anyhow = "1.0"
 bollard = "0.21"
 bytes = "1"
 mockall = "0.15"
-similar-asserts = "1.7"
+similar-asserts = "2.0"
 tempfile = "3"
 walkdir = "2"
 
