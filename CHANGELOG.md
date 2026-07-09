@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/jdrouet/inapt/compare/v0.3.4...v0.3.5) - 2026-07-09
+
+### Fixed
+
+- *(docker)* correct cargo build cache mount path
+- release single stanza ([#103](https://github.com/jdrouet/inapt/pull/103))
+
+### Other
+
+- build release packages natively per architecture
+- *(deps)* batch dependabot updates ([#104](https://github.com/jdrouet/inapt/pull/104))
+
 ## [0.3.4](https://github.com/jdrouet/inapt/compare/v0.3.3...v0.3.4) - 2026-07-08
 
 ### Fixed
