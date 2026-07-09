@@ -33,11 +33,11 @@ FROM base AS builder
 # https://docs.docker.com/engine/reference/builder/#run---mounttypecache
 RUN --mount=type=cache,target=$CARGO_HOME/git,sharing=locked \
     --mount=type=cache,target=$CARGO_HOME/registry,sharing=locked \
-    --mount=type=cache,target=/core/target/release/.fingerprint,sharing=locked \
-    --mount=type=cache,target=/core/target/release/build,sharing=locked \
-    --mount=type=cache,target=/core/target/release/deps,sharing=locked \
-    --mount=type=cache,target=/core/target/release/examples,sharing=locked \
-    --mount=type=cache,target=/core/target/release/incremental,sharing=locked \
+    --mount=type=cache,target=/code/target/release/.fingerprint,sharing=locked \
+    --mount=type=cache,target=/code/target/release/build,sharing=locked \
+    --mount=type=cache,target=/code/target/release/deps,sharing=locked \
+    --mount=type=cache,target=/code/target/release/examples,sharing=locked \
+    --mount=type=cache,target=/code/target/release/incremental,sharing=locked \
     cargo build --release --package inapt --offline
 
 FROM debian
