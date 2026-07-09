@@ -153,7 +153,6 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
         writeln!(f, "Description: {}", self.0.description)?;
         if !self.0.architectures.is_empty() {
             let translation = &self.0.translation;
-            f.write_str("\n")?;
             writeln!(f, "MD5Sum:")?;
             for arch in self.0.architectures.iter() {
                 writeln!(
@@ -178,7 +177,6 @@ impl<'a> std::fmt::Display for SerializedReleaseMetadata<'a> {
                 " {} {} main/i18n/Translation-en.gz",
                 translation.compressed_md5, translation.compressed_size
             )?;
-            f.write_str("\n")?;
             writeln!(f, "SHA256:")?;
             for arch in self.0.architectures.iter() {
                 writeln!(

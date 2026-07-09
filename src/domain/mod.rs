@@ -823,13 +823,11 @@ Components: main
 Date: Wed, 2 Feb 2000 01:02:02 +0000
 Acquire-By-Hash: yes
 Description: Test repo
-
 MD5Sum:
  24494e2b696b17a2eb93c60ba0c748f5 194 main/binary-amd64/Packages
  91d18c5b19270aa56499f4acc31cd4b9 163 main/binary-amd64/Packages.gz
  4560b9c7df212c1581d534d4a0155574 95 main/i18n/Translation-en
  03ba6610c12e09a7f056d6f226897523 96 main/i18n/Translation-en.gz
-
 SHA256:
  8540b64a3eb6bc9b0484d834ff12807404e36bb772ac4e2a670ac9cbbea25835 194 main/binary-amd64/Packages
  50d369648988d47ab31354996318e48efb94480e7691c330bd2eae22da8b2a11 163 main/binary-amd64/Packages.gz
@@ -837,6 +835,144 @@ SHA256:
  2b3d9c8e6b3c453c2cf5a460a6ba325bcf41c8c8917c5026dd84221e57c68aac 96 main/i18n/Translation-en.gz
 "#
         );
+    }
+
+    /// A Debian `Release` file must be a single deb822 stanza: a blank line
+    /// terminates the stanza, so any blank line before or between `MD5Sum:` /
+    /// `SHA256:` hides the checksums from apt ("No Hash entry ... provides only
+    /// weak security information").
+    #[test]
+    fn release_metadata_is_a_single_deb822_stanza() {
+        let config = Arc::new(Config {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            description: "Test repo".into(),
+            repositories: vec!["testrepo".to_string()],
+        });
+        let mut builder = ReleaseMetadataBuilder::new(config);
+        for arch in ["amd64", "arm64"] {
+            builder.insert(entity::Package {
+                metadata: PackageMetadata {
+                    control: PackageControl {
+                        package: "libcaca".into(),
+                        version: "1.1.1".into(),
+                        section: Some("section".into()),
+                        priority: "priority".into(),
+                        architecture: arch.into(),
+                        maintainer: "notme".into(),
+                        description: vec!["description".into()],
+                        others: Default::default(),
+                    },
+                    file: FileMetadata {
+                        size: 512,
+                        sha256: "shasha".into(),
+                    },
+                },
+                asset: DebAsset {
+                    repo_owner: "owner".into(),
+                    repo_name: "name".into(),
+                    release_id: 1234,
+                    asset_id: 1234,
+                    filename: format!("foo_{arch}.deb"),
+                    url: "http://example.com/foo.deb".into(),
+                    size: 123456,
+                    sha256: Some("sha256".into()),
+                },
+            });
+        }
+        let release_metadata = builder.build::<UniqueClock>().unwrap();
+        let serialized = release_metadata.serialize().to_string();
+
+        // Criterion 1: no blank line anywhere in the body -> exactly one stanza.
+        assert!(
+            !serialized.contains("\n\n"),
+            "Release must be a single deb822 stanza with no blank lines, got:\n{serialized}"
+        );
+        assert_eq!(
+            serialized.split("\n\n").count(),
+            1,
+            "Release split on blank line yields more than one stanza"
+        );
+        assert!(
+            serialized.ends_with('\n') && !serialized.ends_with("\n\n"),
+            "Release body must end with exactly one trailing newline"
+        );
+
+        // Criterion 2: a deb822/tag parse of the single stanza finds the SHA256
+        // field populated with an entry for every metadata file.
+        let sha256_entries = parse_deb822_field_entries(&serialized, "SHA256");
+        let mut expected: Vec<String> = Vec::new();
+        for arch in ["amd64", "arm64"] {
+            expected.push(format!("main/binary-{arch}/Packages"));
+            expected.push(format!("main/binary-{arch}/Packages.gz"));
+        }
+        expected.push("main/i18n/Translation-en".to_string());
+        expected.push("main/i18n/Translation-en.gz".to_string());
+        for path in &expected {
+            assert!(
+                sha256_entries
+                    .iter()
+                    .any(|entry| entry.ends_with(path.as_str())),
+                "SHA256 stanza is missing an entry for {path}; parsed entries: {sha256_entries:?}"
+            );
+        }
+    }
+
+    /// With no architectures the checksum sections are omitted entirely; the
+    /// output must still be a single stanza of header fields ending in exactly
+    /// one trailing newline (no dangling blank line).
+    #[test]
+    fn release_metadata_without_architectures_is_a_single_stanza() {
+        let value = entity::ReleaseMetadata {
+            origin: "TestOrigin".into(),
+            label: "TestLabel".into(),
+            suite: "test".into(),
+            version: "0.1.0".into(),
+            codename: "testcode".into(),
+            date: chrono::DateTime::from_timestamp(1286705410, 0).unwrap(),
+            architectures: Vec::default(),
+            components: vec!["main".into()],
+            description: "Test repo".into(),
+            translation: Default::default(),
+        };
+        let serialized = value.serialize().to_string();
+
+        assert!(
+            !serialized.contains("\n\n"),
+            "empty-architectures Release must have no blank line, got:\n{serialized}"
+        );
+        assert!(
+            !serialized.contains("MD5Sum:") && !serialized.contains("SHA256:"),
+            "empty-architectures Release must omit the checksum sections"
+        );
+        assert!(
+            serialized.ends_with("Description: Test repo\n"),
+            "empty-architectures Release must end with the last header field and one newline"
+        );
+    }
+
+    /// Minimal deb822 parser: returns the indented continuation lines (the
+    /// checksum entries) that follow a `field:` line within the first stanza.
+    /// Stops at a blank line (stanza boundary) or the next unindented field.
+    fn parse_deb822_field_entries(stanza: &str, field: &str) -> Vec<String> {
+        let mut entries = Vec::new();
+        let mut in_field = false;
+        for line in stanza.lines() {
+            if line.is_empty() {
+                break;
+            }
+            if let Some(rest) = line.strip_prefix(' ') {
+                if in_field {
+                    entries.push(rest.trim().to_string());
+                }
+            } else {
+                in_field = line == format!("{field}:") || line.starts_with(&format!("{field}: "));
+            }
+        }
+        entries
     }
 
     #[tokio::test]
