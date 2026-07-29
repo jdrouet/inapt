@@ -342,7 +342,7 @@ fn generate_rsa_private_key(path: &std::path::Path) -> Result<()> {
     use rsa::RsaPrivateKey;
     use rsa::pkcs1::EncodeRsaPrivateKey;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rsa::rand_core::OsRng;
     let private_key =
         RsaPrivateKey::new(&mut rng, 2048).context("Failed to generate RSA private key")?;
     let pem = private_key
