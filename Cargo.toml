@@ -35,7 +35,7 @@ futures = "0.3"
 hostname = "0.4"
 hex = "0.4"
 http = "1.4"
-md-5 = "0.10"
+md-5 = "0.11"
 opentelemetry = { version = "0.32", default-features = false }
 opentelemetry-appender-tracing = { version = "0.32", default-features = false }
 opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "tls-ring", "tls-roots"] }
