@@ -1,6 +1,7 @@
 name: security audit
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
