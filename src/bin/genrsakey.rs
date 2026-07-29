@@ -9,7 +9,7 @@ fn main() -> anyhow::Result<()> {
     let private_pem = private_key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)?;
     let public_pem = public_key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)?;
 
-    print!("{}", &*private_pem);
+    print!("{}", *private_pem);
     print!("{public_pem}");
 
     Ok(())
