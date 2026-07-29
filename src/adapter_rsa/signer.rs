@@ -30,7 +30,7 @@ mod tests {
     use crate::domain::prelude::RsaSigner;
 
     fn build_test_client() -> super::super::RsaClient {
-        let mut rng = rand::thread_rng();
+        let mut rng = rsa::rand_core::OsRng;
         let private_key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
         super::super::RsaClient {
             private_key,
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn should_load_key_from_pem_and_sign() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rsa::rand_core::OsRng;
         let private_key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
         let pem =
             rsa::pkcs1::EncodeRsaPrivateKey::to_pkcs1_pem(&private_key, rsa::pkcs1::LineEnding::LF)

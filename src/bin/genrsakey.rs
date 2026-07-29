@@ -2,7 +2,7 @@ use rsa::RsaPrivateKey;
 use rsa::pkcs1::{EncodeRsaPrivateKey, EncodeRsaPublicKey};
 
 fn main() -> anyhow::Result<()> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rsa::rand_core::OsRng;
     let private_key = RsaPrivateKey::new(&mut rng, 4096)?;
     let public_key = private_key.to_public_key();
 
