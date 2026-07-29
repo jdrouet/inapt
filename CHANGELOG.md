@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6](https://github.com/jdrouet/inapt/compare/v0.3.5...v0.3.6) - 2026-07-29
+
+### Fixed
+
+- remove redundant reference in genrsakey print ([#112](https://github.com/jdrouet/inapt/pull/112))
+
+### Other
+
+- allow the security audit to be run on demand ([#125](https://github.com/jdrouet/inapt/pull/125))
+- forbid AI attribution in commits and pull requests ([#124](https://github.com/jdrouet/inapt/pull/124))
+- grant checks:write to the security audit job ([#123](https://github.com/jdrouet/inapt/pull/123))
+- *(deps)* Bump async-trait from 0.1.89 to 0.1.91 ([#121](https://github.com/jdrouet/inapt/pull/121))
+- *(deps)* Bump http from 1.4.2 to 1.5.0 ([#120](https://github.com/jdrouet/inapt/pull/120))
+- *(deps)* Bump tokio from 1.52.3 to 1.53.1 ([#119](https://github.com/jdrouet/inapt/pull/119))
+- *(deps)* Bump futures from 0.3.32 to 0.3.33 ([#118](https://github.com/jdrouet/inapt/pull/118))
+- *(deps)* Bump toml from 1.1.2+spec-1.1.0 to 1.1.4+spec-1.1.0 ([#117](https://github.com/jdrouet/inapt/pull/117))
+- *(deps)* Bump actions/cache from 5 to 6 ([#111](https://github.com/jdrouet/inapt/pull/111))
+- *(deps)* Bump codecov/codecov-action from 5 to 7 ([#110](https://github.com/jdrouet/inapt/pull/110))
+- *(deps)* Bump actions/checkout from 6 to 7 ([#109](https://github.com/jdrouet/inapt/pull/109))
+- *(deps)* drop rand in favour of rsa::rand_core::OsRng ([#114](https://github.com/jdrouet/inapt/pull/114))
+- run testing on every pull request ([#116](https://github.com/jdrouet/inapt/pull/116))
+- *(deps)* Bump md-5 from 0.10.6 to 0.11.0 ([#115](https://github.com/jdrouet/inapt/pull/115))
+- *(deps)* Bump reqwest-tracing from 0.6.0 to 0.7.1 ([#106](https://github.com/jdrouet/inapt/pull/106))
+- *(deps)* Bump sqlx from 0.8.6 to 0.9.0 ([#108](https://github.com/jdrouet/inapt/pull/108))
+
 ## [0.3.5](https://github.com/jdrouet/inapt/compare/v0.3.4...v0.3.5) - 2026-07-09
 
 ### Fixed
