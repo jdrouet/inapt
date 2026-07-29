@@ -11,6 +11,11 @@ on:
 jobs:
   security_audit:
     runs-on: ubuntu-latest
+    # audit-check publishes its findings as a commit check, which the
+    # read-only default token cannot create.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v7
       - uses: rustsec/audit-check@v2.0.0
