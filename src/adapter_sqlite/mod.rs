@@ -514,7 +514,10 @@ impl SqliteStorage {
     /// Compute translation metadata from architectures.
     fn compute_translation_metadata(architectures: &[ArchitectureMetadata]) -> TranslationMetadata {
         use flate2::write::GzEncoder;
-        use md5::Digest;
+        // md-5 and sha2 are on different digest versions, so each Digest trait
+        // must be imported for its own hasher.
+        use md5::Digest as _;
+        use sha2::Digest as _;
         use std::collections::HashSet;
         use std::io::Write;
 
