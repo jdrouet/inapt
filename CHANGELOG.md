@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6](https://github.com/jdrouet/inapt/compare/v0.3.5...v0.3.6) - 2026-07-29
+
+### Fixed
+
+- remove redundant reference in genrsakey print ([#112](https://github.com/jdrouet/inapt/pull/112))
+
+### Other
+
+- *(deps)* drop rand in favour of rsa::rand_core::OsRng ([#114](https://github.com/jdrouet/inapt/pull/114))
+- run testing on every pull request ([#116](https://github.com/jdrouet/inapt/pull/116))
+- *(deps)* Bump md-5 from 0.10.6 to 0.11.0 ([#115](https://github.com/jdrouet/inapt/pull/115))
+- *(deps)* Bump reqwest-tracing from 0.6.0 to 0.7.1 ([#106](https://github.com/jdrouet/inapt/pull/106))
+- *(deps)* Bump sqlx from 0.8.6 to 0.9.0 ([#108](https://github.com/jdrouet/inapt/pull/108))
+
 ## [0.3.5](https://github.com/jdrouet/inapt/compare/v0.3.4...v0.3.5) - 2026-07-09
 
 ### Fixed
