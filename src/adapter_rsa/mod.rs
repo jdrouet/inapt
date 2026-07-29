@@ -19,7 +19,7 @@ fn default_key_name() -> String {
 
 impl Config {
     fn generate_private_key(&self) -> anyhow::Result<()> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rsa::rand_core::OsRng;
         let private_key =
             RsaPrivateKey::new(&mut rng, 4096).context("unable to generate RSA private key")?;
 
@@ -92,7 +92,7 @@ mod tests {
         let key_path = dir.path().join("existing-key.pem");
 
         // Generate a key first
-        let mut rng = rand::thread_rng();
+        let mut rng = rsa::rand_core::OsRng;
         let private_key = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
         let pem =
             rsa::pkcs1::EncodeRsaPrivateKey::to_pkcs1_pem(&private_key, rsa::pkcs1::LineEnding::LF)
