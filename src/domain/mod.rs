@@ -8,7 +8,10 @@ use std::{
 
 use flate2::{Compression, write::GzEncoder};
 
-use sha2::Digest;
+// md-5 and sha2 are on different digest versions, so each Digest trait must be
+// imported for its own hasher.
+use md5::Digest as _;
+use sha2::Digest as _;
 
 pub(crate) mod entity;
 pub(crate) mod prelude;
@@ -635,8 +638,6 @@ impl ReleaseMetadataBuilder {
     fn build_translation_metadata(
         architectures: &[entity::ArchitectureMetadata],
     ) -> anyhow::Result<entity::TranslationMetadata> {
-        use sha2::Digest;
-
         // Collect unique packages by name (deduplicate across architectures)
         let mut seen_packages: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut entries = Vec::new();
@@ -718,15 +719,15 @@ impl ArchitectureMetadataBuilder {
             .enumerate()
         {
             if index > 0 {
-                let _ = plain_sha256_hasher.write(b"\n")?;
-                let _ = plain_md5_hasher.write(b"\n")?;
+                plain_sha256_hasher.update(b"\n");
+                plain_md5_hasher.update(b"\n");
                 let _ = gz_encoder.write(b"\n")?;
                 plain_size += 1;
             }
             let display = package.serialize().to_string();
             plain_size += display.len() as u64;
-            let _ = plain_sha256_hasher.write(display.as_bytes())?;
-            let _ = plain_md5_hasher.write(display.as_bytes())?;
+            plain_sha256_hasher.update(display.as_bytes());
+            plain_md5_hasher.update(display.as_bytes());
             let _ = gz_encoder.write(display.as_bytes())?;
             packages.push(package);
         }
