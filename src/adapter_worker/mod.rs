@@ -49,6 +49,8 @@ where
 
     pub fn build(self) -> anyhow::Result<Worker> {
         let runner = Runner {
+            sighup: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+                .context("unable to listen to SIGHUP")?,
             apt_repository: self
                 .apt_repository
                 .ok_or_else(|| anyhow::anyhow!("apt repository not specified"))?,
@@ -76,6 +78,7 @@ impl Worker {
 }
 
 struct Runner<AR, APK> {
+    sighup: tokio::signal::unix::Signal,
     apt_repository: AR,
     apk_repository: APK,
     interval: Duration,
@@ -86,12 +89,18 @@ where
     AR: crate::domain::prelude::AptRepositoryWriter,
     APK: crate::domain::prelude::ApkRepositoryWriter,
 {
-    async fn run(self) {
+    async fn run(mut self) {
         tracing::info!("starting worker");
         let mut interval = tokio::time::interval(self.interval);
         let mut failures = 0u64;
         loop {
-            let _ = interval.tick().await;
+            tokio::select! {
+                _ = interval.tick() => {}
+                _ = self.sighup.recv() => {
+                    tracing::info!("received SIGHUP, forcing synchro");
+                    interval.reset();
+                }
+            }
             tracing::info!("starting synchro");
 
             let mut has_error = false;

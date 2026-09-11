@@ -137,6 +137,9 @@ echo "deb [trusted=yes] http://localhost:3000 stable main" | \
 | `sqlite` | `path` | SQLite database path | |
 | `worker` | `interval` | Sync interval (seconds) | `43200` (12h) |
 
+Send `SIGHUP` to the process to trigger a synchronization immediately (`kill -HUP <pid>`,
+or `docker kill --signal=HUP <container>`). The periodic interval restarts from that point.
+
 ### Environment Variables (Tracing)
 
 | Variable | Description | Default |
