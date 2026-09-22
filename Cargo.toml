@@ -39,7 +39,7 @@ md-5 = "0.11"
 opentelemetry = { version = "0.32", default-features = false }
 opentelemetry-appender-tracing = { version = "0.32", default-features = false }
 opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "tls-ring", "tls-roots"] }
-opentelemetry-semantic-conventions = { version = "0.32", default-features = false, features = ["semconv_experimental"] }
+opentelemetry-semantic-conventions = { version = "0.33", default-features = false, features = ["semconv_experimental"] }
 opentelemetry_sdk = { version = "0.32", default-features = false, features = ["logs", "metrics", "rt-tokio", "trace"] }
 rsa = { version = "0.9", features = ["pem"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
