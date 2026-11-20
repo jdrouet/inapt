@@ -341,13 +341,13 @@ async fn start_inapt_container(
 /// Generate an RSA private key in PKCS#1 PEM format for APK index signing,
 /// returning the matching public key in the PEM format apk expects.
 fn generate_rsa_private_key(path: &std::path::Path) -> Result<String> {
-    use rsa::RsaPrivateKey;
+    use rsa::PrivateKey;
     use rsa::pkcs1::EncodeRsaPrivateKey;
     use rsa::pkcs8::EncodePublicKey;
 
-    let mut rng = rsa::rand_core::OsRng;
+    let mut rng = getrandom::SysRng;
     let private_key =
-        RsaPrivateKey::new(&mut rng, 2048).context("Failed to generate RSA private key")?;
+        PrivateKey::new(&mut rng, 2048).context("Failed to generate RSA private key")?;
     let pem = private_key
         .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
         .context("Failed to encode RSA private key as PEM")?;

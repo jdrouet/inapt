@@ -11,7 +11,6 @@ use flate2::{Compression, write::GzEncoder};
 // md-5 and sha2 are on different digest versions, so each Digest trait must be
 // imported for its own hasher.
 use md5::Digest as _;
-use sha2::Digest as _;
 
 pub(crate) mod entity;
 pub(crate) mod prelude;
@@ -2444,7 +2443,7 @@ SHA256:
             })
         });
 
-        let private_key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap();
+        let private_key = rsa::PrivateKey::new(&mut getrandom::SysRng, 2048).unwrap();
         let signing_key = rsa::pkcs1v15::SigningKey::<sha2::Sha256>::new(private_key.clone());
         let mut mock_rsa_signer = MockRsaSigner::new();
         mock_rsa_signer.expect_sign().returning(move |data| {
