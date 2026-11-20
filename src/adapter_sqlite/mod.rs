@@ -521,7 +521,6 @@ impl SqliteStorage {
         // md-5 and sha2 are on different digest versions, so each Digest trait
         // must be imported for its own hasher.
         use md5::Digest as _;
-        use sha2::Digest as _;
         use std::collections::HashSet;
         use std::io::Write;
 

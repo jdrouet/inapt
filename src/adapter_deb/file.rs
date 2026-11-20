@@ -2,10 +2,20 @@ use crate::domain::entity::FileMetadata;
 
 pub fn from_path(path: &std::path::Path) -> anyhow::Result<FileMetadata> {
     use sha2::{Digest, Sha256};
+    use std::io::Read;
 
     let mut hasher = Sha256::new();
     let mut file = std::fs::File::open(path)?;
-    let size = std::io::copy(&mut file, &mut hasher)?;
+    let mut buf = [0u8; 64 * 1024];
+    let mut size = 0u64;
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        size += n as u64;
+    }
     let hash_bytes = hasher.finalize();
 
     Ok(FileMetadata {

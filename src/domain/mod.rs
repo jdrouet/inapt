@@ -11,7 +11,6 @@ use flate2::{Compression, write::GzEncoder};
 // md-5 and sha2 are on different digest versions, so each Digest trait must be
 // imported for its own hasher.
 use md5::Digest as _;
-use sha2::Digest as _;
 
 pub(crate) mod entity;
 pub(crate) mod prelude;

@@ -1,7 +1,7 @@
 use std::{io::Write, path::PathBuf};
 
 use anyhow::Context;
-use rsa::RsaPrivateKey;
+use rsa::PrivateKey;
 use rsa::pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey};
 
 mod signer;
@@ -19,9 +19,9 @@ fn default_key_name() -> String {
 
 impl Config {
     fn generate_private_key(&self) -> anyhow::Result<()> {
-        let mut rng = rsa::rand_core::OsRng;
+        let mut rng = getrandom::SysRng;
         let private_key =
-            RsaPrivateKey::new(&mut rng, 4096).context("unable to generate RSA private key")?;
+            PrivateKey::new(&mut rng, 4096).context("unable to generate RSA private key")?;
 
         let pem = private_key
             .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
@@ -51,8 +51,8 @@ impl Config {
         let pem = std::fs::read_to_string(&self.private_key_path)
             .context("unable to read RSA private key file")?;
 
-        let private_key = RsaPrivateKey::from_pkcs1_pem(&pem)
-            .context("unable to parse RSA private key from PEM")?;
+        let private_key =
+            PrivateKey::from_pkcs1_pem(&pem).context("unable to parse RSA private key from PEM")?;
 
         Ok(RsaClient {
             private_key,
@@ -63,7 +63,7 @@ impl Config {
 
 #[derive(Clone)]
 pub struct RsaClient {
-    private_key: RsaPrivateKey,
+    private_key: PrivateKey,
     key_name: String,
 }
 
@@ -92,8 +92,8 @@ mod tests {
         let key_path = dir.path().join("existing-key.pem");
 
         // Generate a key first
-        let mut rng = rsa::rand_core::OsRng;
-        let private_key = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let mut rng = getrandom::SysRng;
+        let private_key = rsa::PrivateKey::new(&mut rng, 2048).unwrap();
         let pem =
             rsa::pkcs1::EncodeRsaPrivateKey::to_pkcs1_pem(&private_key, rsa::pkcs1::LineEnding::LF)
                 .unwrap();
