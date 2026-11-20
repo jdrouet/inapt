@@ -61,7 +61,7 @@ tracing = { version = "0.1" }
 tracing-opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
 xz2 = "0.1"      # for .xz
-zstd = "0.13"    # for .zst
+zstd = "0.14"    # for .zst
 
 [features]
 default = []
