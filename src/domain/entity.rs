@@ -320,6 +320,8 @@ pub struct ApkMetadata {
     pub provides: Vec<String>,
     /// SHA256 checksum of the package data (`datahash`).
     pub datahash: Option<String>,
+    /// APKINDEX `C:` value: `Q1` + base64(SHA-1 of the control gzip stream).
+    pub checksum: String,
 }
 
 /// Represents an `.apk` asset from a GitHub release.
@@ -343,9 +345,7 @@ impl<'a> std::fmt::Display for SerializedApkIndexEntry<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let meta = &self.0.metadata;
         let asset = &self.0.asset;
-        if let Some(ref datahash) = meta.datahash {
-            writeln!(f, "C:{datahash}")?;
-        }
+        writeln!(f, "C:{}", meta.checksum)?;
         writeln!(f, "P:{}", meta.name)?;
         writeln!(f, "V:{}", meta.version)?;
         writeln!(f, "A:{}", meta.architecture)?;

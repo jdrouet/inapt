@@ -157,7 +157,8 @@ fn walk_directory(path: &std::path::Path, prefix: &str) -> Result<Vec<(String, V
 fn create_test_config(inapt_port: u16) -> String {
     format!(
         r#"[core]
-repositories = ["jdrouet/inapt"]
+# Small upstream project publishing unsigned nfpm-built .apk assets.
+repositories = ["goreleaser/example"]
 
 [github]
 base_url = "https://api.github.com"
@@ -250,7 +251,7 @@ async fn start_inapt_container(
     docker: &Docker,
     network_name: &str,
     test_name: &str,
-) -> Result<String> {
+) -> Result<(String, String)> {
     let project_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let private_key_path = project_root.join("resources/private-key.pem");
     let public_key_path = project_root.join("resources/public-key.pem");
@@ -263,7 +264,7 @@ async fn start_inapt_container(
 
     // Generate an RSA private key for APK signing in the temp directory
     let rsa_key_path = temp_dir.path().join("rsa-private-key.pem");
-    generate_rsa_private_key(&rsa_key_path)?;
+    let rsa_public_key = generate_rsa_private_key(&rsa_key_path)?;
 
     let container_name = format!("inapt-e2e-server-{}", test_name);
 
@@ -334,13 +335,15 @@ async fn start_inapt_container(
     // Keep temp_dir alive by leaking it (it will be cleaned up when the test ends)
     std::mem::forget(temp_dir);
 
-    Ok(container.id)
+    Ok((container.id, rsa_public_key))
 }
 
-/// Generate an RSA private key in PKCS#1 PEM format for APK index signing
-fn generate_rsa_private_key(path: &std::path::Path) -> Result<()> {
+/// Generate an RSA private key in PKCS#1 PEM format for APK index signing,
+/// returning the matching public key in the PEM format apk expects.
+fn generate_rsa_private_key(path: &std::path::Path) -> Result<String> {
     use rsa::PrivateKey;
     use rsa::pkcs1::EncodeRsaPrivateKey;
+    use rsa::pkcs8::EncodePublicKey;
 
     let mut rng = getrandom::SysRng;
     let private_key =
@@ -349,7 +352,10 @@ fn generate_rsa_private_key(path: &std::path::Path) -> Result<()> {
         .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
         .context("Failed to encode RSA private key as PEM")?;
     std::fs::write(path, pem.as_bytes()).context("Failed to write RSA private key")?;
-    Ok(())
+    private_key
+        .to_public_key()
+        .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+        .context("Failed to encode RSA public key as PEM")
 }
 
 /// Run `apk update` in an Alpine container and verify it works
@@ -358,6 +364,7 @@ async fn run_apk_client_test(
     network_name: &str,
     inapt_hostname: &str,
     test_name: &str,
+    rsa_public_key: &str,
 ) -> Result<()> {
     let container_name = format!("inapt-e2e-client-{}", test_name);
 
@@ -382,21 +389,31 @@ set -e
 
 echo "=== Starting APK client test ==="
 
-# Add the inapt repository (allow untrusted since we use a test key)
+# Trust the test signing key under the name inapt signs with
+cat > /etc/apk/keys/inapt.rsa.pub <<'EOF'
+{rsa_public_key}EOF
+
 echo "Adding inapt repository..."
-echo "http://{}:3000" >> /etc/apk/repositories
+echo "http://{inapt_hostname}:3000" >> /etc/apk/repositories
 
 # Show the repositories configuration
 echo "Repository configuration:"
 cat /etc/apk/repositories
 
-# Run apk update (allow untrusted packages for testing)
 echo "Running apk update..."
-apk update --allow-untrusted 2>&1
+set -o pipefail
+apk update 2>&1 | tee /tmp/apk-update.log
+if grep -E "(WARNING|ERROR).*{inapt_hostname}" /tmp/apk-update.log; then
+    echo "apk update reported warnings"
+    exit 1
+fi
+
+echo "Installing a package from inapt..."
+apk add example 2>&1
+apk info -e example
 
 echo "=== APK client test completed ==="
-"#,
-        inapt_hostname
+"#
     );
 
     let config = ContainerCreateBody {
@@ -550,13 +567,21 @@ async fn should_update_apk_index_from_inapt_repository() {
         network_id = Some(net_id.clone());
 
         let server_hostname = format!("inapt-e2e-server-{}", test_name);
-        let container_id = start_inapt_container(&docker, &net_id, test_name).await?;
+        let (container_id, rsa_public_key) =
+            start_inapt_container(&docker, &net_id, test_name).await?;
         inapt_container_id = Some(container_id.clone());
 
         println!("Waiting for inapt to sync packages from GitHub...");
         tokio::time::sleep(Duration::from_secs(30)).await;
 
-        run_apk_client_test(&docker, &net_id, &server_hostname, test_name).await?;
+        run_apk_client_test(
+            &docker,
+            &net_id,
+            &server_hostname,
+            test_name,
+            &rsa_public_key,
+        )
+        .await?;
 
         Ok::<(), anyhow::Error>(())
     }

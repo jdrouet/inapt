@@ -2,35 +2,46 @@ use anyhow::Context;
 
 use crate::domain::entity::ApkMetadata;
 
-/// Extract `.PKGINFO` from an `.apk` file (gzipped tar) and parse it into [`ApkMetadata`].
+/// Extract `.PKGINFO` from an `.apk` file and parse it into [`ApkMetadata`].
 pub fn from_path(path: &std::path::Path) -> anyhow::Result<ApkMetadata> {
-    let file = std::fs::File::open(path).context("unable to open file")?;
-    let raw = read_pkginfo(file)?;
-    parse_pkginfo(&raw)
+    let bytes = std::fs::read(path).context("unable to read file")?;
+    let (raw, checksum) = read_control(&bytes)?;
+    parse_pkginfo(&raw, checksum)
 }
 
-/// Read the `.PKGINFO` entry from an `.apk` archive.
+/// Find the control segment of an `.apk` and return its `.PKGINFO` with the
+/// APKINDEX `C:` checksum.
 ///
-/// APK files are concatenated gzip streams (signature, control, data).
-/// `.PKGINFO` lives in the control segment, so we use `MultiGzDecoder`
-/// to transparently read across gzip stream boundaries.
-fn read_pkginfo<R: std::io::Read>(reader: R) -> anyhow::Result<String> {
+/// An `.apk` is concatenated gzip streams (optional signature, control, data).
+/// The control stream is the one holding `.PKGINFO`; apk identifies a package
+/// by `Q1` + base64(SHA-1 of that stream's compressed bytes).
+fn read_control(bytes: &[u8]) -> anyhow::Result<(String, String)> {
+    use base64::Engine;
+    use sha1::Digest;
     use std::io::Read;
 
-    let gz = flate2::read::MultiGzDecoder::new(reader);
-    let mut tar = tar::Archive::new(gz);
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        let before = rest.len();
+        let mut tar_bytes = Vec::new();
+        flate2::bufread::GzDecoder::new(&mut rest)
+            .read_to_end(&mut tar_bytes)
+            .context("invalid gzip stream in apk archive")?;
+        let stream = &bytes[bytes.len() - before..bytes.len() - rest.len()];
 
-    for entry in tar.entries()? {
-        let mut entry = entry?;
-        let path = entry
-            .path()
-            .ok()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if path == ".PKGINFO" {
-            let mut value = String::new();
-            entry.read_to_string(&mut value)?;
-            return Ok(value);
+        let mut archive = tar::Archive::new(tar_bytes.as_slice());
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            if entry.path()?.as_os_str() == ".PKGINFO" {
+                let mut value = String::new();
+                entry.read_to_string(&mut value)?;
+                let digest = sha1::Sha1::digest(stream);
+                let checksum = format!(
+                    "Q1{}",
+                    base64::engine::general_purpose::STANDARD.encode(digest)
+                );
+                return Ok((value, checksum));
+            }
         }
     }
 
@@ -38,7 +49,7 @@ fn read_pkginfo<R: std::io::Read>(reader: R) -> anyhow::Result<String> {
 }
 
 /// Parse `.PKGINFO` key-value content into [`ApkMetadata`].
-fn parse_pkginfo(input: &str) -> anyhow::Result<ApkMetadata> {
+fn parse_pkginfo(input: &str, checksum: String) -> anyhow::Result<ApkMetadata> {
     let mut builder = PkgInfoBuilder::default();
 
     for line in input.lines() {
@@ -52,7 +63,7 @@ fn parse_pkginfo(input: &str) -> anyhow::Result<ApkMetadata> {
         }
     }
 
-    builder.build()
+    builder.build(checksum)
 }
 
 #[derive(Debug, Default)]
@@ -93,7 +104,7 @@ impl PkgInfoBuilder {
         }
     }
 
-    fn build(self) -> anyhow::Result<ApkMetadata> {
+    fn build(self, checksum: String) -> anyhow::Result<ApkMetadata> {
         Ok(ApkMetadata {
             name: self
                 .name
@@ -122,6 +133,7 @@ impl PkgInfoBuilder {
             dependencies: self.dependencies,
             provides: self.provides,
             datahash: self.datahash,
+            checksum,
         })
     }
 }
@@ -153,7 +165,7 @@ provides = cmd:busybox=1.37.0-r14
 depend = so:libc.musl-x86_64.so.1
 datahash = dba362efdaf5615e7193972f24e56c73ac395830a1756afe35246f42e8f1de56
 "#;
-        let meta = parse_pkginfo(input).unwrap();
+        let meta = parse_pkginfo(input, "Q1test".to_string()).unwrap();
         assert_eq!(meta.name, "busybox");
         assert_eq!(meta.version, "1.37.0-r14");
         assert_eq!(meta.architecture, "x86_64");
@@ -193,7 +205,7 @@ maintainer = Natanael Copa <ncopa@alpinelinux.org>
 license = MIT
 datahash = c72f1654a3503e252d02681b55c7074c6620310333523d8830ec3edb199e5327
 "#;
-        let meta = parse_pkginfo(input).unwrap();
+        let meta = parse_pkginfo(input, "Q1test".to_string()).unwrap();
         assert_eq!(meta.name, "alpine-keys");
         assert_eq!(meta.version, "2.5-r0");
         assert!(meta.dependencies.is_empty());
@@ -203,7 +215,7 @@ datahash = c72f1654a3503e252d02681b55c7074c6620310333523d8830ec3edb199e5327
     #[test]
     fn should_fail_when_pkgname_missing() {
         let input = "pkgver = 1.0\narch = x86_64\nsize = 100\npkgdesc = test\nurl = http://test\nlicense = MIT\n";
-        let err = parse_pkginfo(input).unwrap_err();
+        let err = parse_pkginfo(input, "Q1test".to_string()).unwrap_err();
         assert!(err.to_string().contains("pkgname"));
     }
 
@@ -220,6 +232,8 @@ datahash = c72f1654a3503e252d02681b55c7074c6620310333523d8830ec3edb199e5327
         assert!(!meta.dependencies.is_empty());
         assert!(!meta.provides.is_empty());
         assert!(meta.datahash.is_some());
+        // Value produced by `apk index` (apk-tools 2.14.13) for this file.
+        assert_eq!(meta.checksum, "Q1p/ydDCbqw8aB8uA/M5rzEgEeRD4=");
     }
 
     #[test]
@@ -234,5 +248,7 @@ datahash = c72f1654a3503e252d02681b55c7074c6620310333523d8830ec3edb199e5327
         assert_eq!(meta.license, "MIT");
         assert!(meta.dependencies.is_empty());
         assert!(meta.provides.is_empty());
+        // Value produced by `apk index` (apk-tools 2.14.13) for this file.
+        assert_eq!(meta.checksum, "Q1kQFL/boOf3tFBRWUZunxmHFgalk=");
     }
 }
