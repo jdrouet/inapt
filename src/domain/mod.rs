@@ -249,9 +249,12 @@ where
         filename: &str,
     ) -> anyhow::Result<Option<entity::ApkPackage>> {
         let all_packages = self.apk_package_store.list_all_apk_packages().await?;
-        Ok(all_packages
-            .into_iter()
-            .find(|p| p.metadata.architecture == arch && p.asset.filename == filename))
+        // apk-tools always requests `<name>-<version>.apk`, whatever the asset is called.
+        Ok(all_packages.into_iter().find(|p| {
+            p.metadata.architecture == arch
+                && (p.asset.filename == filename
+                    || format!("{}-{}.apk", p.metadata.name, p.metadata.version) == filename)
+        }))
     }
 }
 
@@ -2059,6 +2062,7 @@ SHA256:
                         dependencies: vec!["so:libc.musl-x86_64.so.1".to_string()],
                         provides: vec!["cmd:pkg=1.0.0-r0".to_string()],
                         datahash: Some("abc123".to_string()),
+                        checksum: "Q1test".to_string(),
                     })
                 })
             });
@@ -2182,6 +2186,7 @@ SHA256:
                         dependencies: vec![],
                         provides: vec![],
                         datahash: None,
+                        checksum: "Q1test".to_string(),
                     })
                 })
             });
@@ -2284,6 +2289,7 @@ SHA256:
                             dependencies: vec![],
                             provides: vec![],
                             datahash: None,
+                            checksum: "Q1test".to_string(),
                         },
                         asset: ApkAsset {
                             repo_owner: "owner".to_string(),
@@ -2393,6 +2399,7 @@ SHA256:
                             dependencies: vec!["so:libc.musl-x86_64.so.1".to_string()],
                             provides: vec!["cmd:busybox=1.37.0-r14".to_string()],
                             datahash: Some("dba362ef".to_string()),
+                            checksum: "Q1test".to_string(),
                         },
                         asset: ApkAsset {
                             repo_owner: "owner".to_string(),
@@ -2420,6 +2427,7 @@ SHA256:
                             dependencies: vec![],
                             provides: vec![],
                             datahash: None,
+                            checksum: "Q1test".to_string(),
                         },
                         asset: ApkAsset {
                             repo_owner: "owner".to_string(),
@@ -2521,7 +2529,7 @@ SHA256:
         assert!(index_content.contains("I:817257"));
         assert!(index_content.contains("D:so:libc.musl-x86_64.so.1"));
         assert!(index_content.contains("p:cmd:busybox=1.37.0-r14"));
-        assert!(index_content.contains("C:dba362ef"));
+        assert!(index_content.contains("C:Q1test\n"));
         // Should NOT contain the aarch64 package
         assert!(!index_content.contains("P:other"));
         assert!(!index_content.contains("A:aarch64"));
@@ -2563,13 +2571,14 @@ SHA256:
                         dependencies: vec![],
                         provides: vec![],
                         datahash: None,
+                        checksum: "Q1test".to_string(),
                     },
                     asset: ApkAsset {
                         repo_owner: "owner".to_string(),
                         repo_name: "repo".to_string(),
                         release_id: 1,
                         asset_id: 10,
-                        filename: "busybox-1.37.0-r14.apk".to_string(),
+                        filename: "busybox_1.37.0-r14_linux_amd64.apk".to_string(),
                         url: "http://example.com/busybox.apk".to_string(),
                         size: 512000,
                         sha256: None,
@@ -2601,6 +2610,16 @@ SHA256:
                 .unwrap();
         assert!(result.is_none());
 
+        // Should also find by the upstream asset filename
+        let result = ApkRepositoryReader::apk_package(
+            &service,
+            "x86_64",
+            "busybox_1.37.0-r14_linux_amd64.apk",
+        )
+        .await
+        .unwrap();
+        assert!(result.is_some());
+
         // Should not find with wrong filename
         let result = ApkRepositoryReader::apk_package(&service, "x86_64", "nonexistent.apk")
             .await
@@ -2627,6 +2646,7 @@ SHA256:
                 dependencies: vec!["so:libc.musl-x86_64.so.1".to_string()],
                 provides: vec!["cmd:busybox=1.37.0-r14".to_string()],
                 datahash: Some("dba362ef".to_string()),
+                checksum: "Q1p/ydDCbqw8aB8uA/M5rzEgEeRD4=".to_string(),
             },
             asset: ApkAsset {
                 repo_owner: "owner".to_string(),
@@ -2643,7 +2663,7 @@ SHA256:
         let serialized = package.serialize().to_string();
         similar_asserts::assert_eq!(
             serialized,
-            "C:dba362ef\n\
+            "C:Q1p/ydDCbqw8aB8uA/M5rzEgEeRD4=\n\
              P:busybox\n\
              V:1.37.0-r14\n\
              A:x86_64\n\

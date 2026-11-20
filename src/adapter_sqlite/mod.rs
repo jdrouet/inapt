@@ -77,14 +77,14 @@ const SQL_INSERT_APK_ASSETS_BATCH: &str = r#"
         id, release_id, repo_owner, repo_name, filename, url, size, sha256,
         pkg_name, pkg_version, pkg_architecture, pkg_installed_size,
         pkg_description, pkg_url, pkg_license, pkg_origin, pkg_maintainer,
-        pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash
+        pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash, pkg_checksum
     ) "#;
 
 const SQL_SELECT_APK_ASSET_BY_ID: &str = r#"
     SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
            pkg_name, pkg_version, pkg_architecture, pkg_installed_size,
            pkg_description, pkg_url, pkg_license, pkg_origin, pkg_maintainer,
-           pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash
+           pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash, pkg_checksum
     FROM apk_assets WHERE id = ?
 "#;
 
@@ -92,7 +92,7 @@ const SQL_SELECT_ALL_APK_ASSETS: &str = r#"
     SELECT id, release_id, repo_owner, repo_name, filename, url, size, sha256,
            pkg_name, pkg_version, pkg_architecture, pkg_installed_size,
            pkg_description, pkg_url, pkg_license, pkg_origin, pkg_maintainer,
-           pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash
+           pkg_build_date, pkg_dependencies, pkg_provides, pkg_datahash, pkg_checksum
     FROM apk_assets
 "#;
 
@@ -232,6 +232,7 @@ impl<'r> FromRow<'r, SqliteRow> for SqliteWrapper<ApkPackage> {
                 dependencies: serde_json::from_str(&dependencies).unwrap_or_default(),
                 provides: serde_json::from_str(&provides).unwrap_or_default(),
                 datahash: row.try_get("pkg_datahash")?,
+                checksum: row.try_get("pkg_checksum")?,
             },
             asset: ApkAsset {
                 repo_owner: row.try_get("repo_owner")?,
@@ -816,7 +817,8 @@ impl crate::domain::prelude::ApkPackageStore for SqliteStorage {
                 .push_bind(package.metadata.build_date.map(|v| v as i64))
                 .push_bind(dependencies_json)
                 .push_bind(provides_json)
-                .push_bind(&package.metadata.datahash);
+                .push_bind(&package.metadata.datahash)
+                .push_bind(&package.metadata.checksum);
         });
 
         query_builder.build().execute(&self.pool).await?;
@@ -1230,6 +1232,7 @@ mod tests {
                 dependencies: vec!["musl>=1.2".to_string(), "libgcc".to_string()],
                 provides: vec!["test-apk=1.0.0-r0".to_string()],
                 datahash: Some("abc123def456".to_string()),
+                checksum: "Q1test".to_string(),
             },
             asset: ApkAsset {
                 repo_owner: "owner".to_string(),
@@ -1372,6 +1375,7 @@ mod tests {
                 dependencies: vec![],
                 provides: vec![],
                 datahash: None,
+                checksum: "Q1test".to_string(),
             },
             asset: ApkAsset {
                 repo_owner: "owner".to_string(),

@@ -61,6 +61,7 @@ mod tests {
                 dependencies: Vec::new(),
                 provides: Vec::new(),
                 datahash: None,
+                checksum: "Q1test".to_string(),
             },
             asset: ApkAsset {
                 repo_owner: "owner".to_string(),
