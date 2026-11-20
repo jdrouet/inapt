@@ -16,6 +16,30 @@ use sha2::Digest as _;
 pub(crate) mod entity;
 pub(crate) mod prelude;
 
+/// One tar entry (header and padded data) without end-of-archive blocks. apk's
+/// tar reader rejects empty numeric fields, so uid, gid and mtime are set.
+fn apk_tar_entry(path: &str, data: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut header = tar::Header::new_gnu();
+    header.set_path(path)?;
+    header.set_size(data.len() as u64);
+    header.set_mode(0o644);
+    header.set_uid(0);
+    header.set_gid(0);
+    header.set_mtime(0);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_cksum();
+    let mut entry = header.as_bytes().to_vec();
+    entry.extend_from_slice(data);
+    entry.resize(entry.len().next_multiple_of(512), 0);
+    Ok(entry)
+}
+
+fn gzip(data: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data)?;
+    encoder.finish()
+}
+
 /// Core domain service for synchronizing APK packages from GitHub
 /// and serving signed APKINDEX repositories.
 #[derive(Clone, Debug)]
@@ -155,41 +179,27 @@ where
             .filter(|p| p.metadata.architecture == arch)
             .collect();
 
-        let index_content = arch_packages
+        // Every entry, including the last, is terminated by a blank line.
+        let index_content: String = arch_packages
             .iter()
-            .map(|p| p.serialize().to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-
+            .map(|p| format!("{}\n", p.serialize()))
+            .collect();
         let index_bytes = index_content.as_bytes();
 
-        let signature = self.rsa_signer.sign(index_bytes)?;
-        let sign_entry_name = format!(".SIGN.RSA.{}", self.rsa_signer.key_name());
+        let mut index_tar = apk_tar_entry("APKINDEX", index_bytes)?;
+        index_tar.resize(index_tar.len() + 1024, 0); // end-of-archive blocks
+        let index_gz = gzip(&index_tar)?;
 
-        let mut tar_buffer = Vec::new();
-        {
-            let mut tar_builder = tar::Builder::new(&mut tar_buffer);
+        // apk reads a signed index as two concatenated gzip streams: a signature
+        // tar (no end-of-archive blocks) whose `.SIGN.RSA256.<key>` entry signs
+        // the SHA-256 of the raw bytes of the following index gzip stream.
+        let signature = self.rsa_signer.sign(&index_gz)?;
+        let sign_entry_name = format!(".SIGN.RSA256.{}", self.rsa_signer.key_name());
+        let sig_tar = apk_tar_entry(&sign_entry_name, &signature)?;
 
-            // Add the signature entry
-            let mut sig_header = tar::Header::new_gnu();
-            sig_header.set_size(signature.len() as u64);
-            sig_header.set_mode(0o644);
-            sig_header.set_cksum();
-            tar_builder.append_data(&mut sig_header, &sign_entry_name, signature.as_slice())?;
-
-            // Add the APKINDEX entry
-            let mut idx_header = tar::Header::new_gnu();
-            idx_header.set_size(index_bytes.len() as u64);
-            idx_header.set_mode(0o644);
-            idx_header.set_cksum();
-            tar_builder.append_data(&mut idx_header, "APKINDEX", index_bytes)?;
-
-            tar_builder.finish()?;
-        }
-
-        let mut gz_encoder = GzEncoder::new(Vec::new(), Compression::default());
-        gz_encoder.write_all(&tar_buffer)?;
-        Ok(gz_encoder.finish()?)
+        let mut output = gzip(&sig_tar)?;
+        output.extend_from_slice(&index_gz);
+        Ok(output)
     }
 }
 
@@ -2426,10 +2436,13 @@ SHA256:
             })
         });
 
+        let private_key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap();
+        let signing_key = rsa::pkcs1v15::SigningKey::<sha2::Sha256>::new(private_key.clone());
         let mut mock_rsa_signer = MockRsaSigner::new();
-        mock_rsa_signer
-            .expect_sign()
-            .returning(|_data| Ok(b"FAKESIG".to_vec()));
+        mock_rsa_signer.expect_sign().returning(move |data| {
+            use rsa::signature::{SignatureEncoding, Signer};
+            Ok(signing_key.sign(data).to_vec())
+        });
         mock_rsa_signer
             .expect_key_name()
             .return_const("test.rsa.pub".to_string());
@@ -2443,16 +2456,48 @@ SHA256:
             apk_package_store: mock_apk_store,
         };
 
-        let tar_gz_bytes = ApkRepositoryReader::apk_index(&service, "x86_64")
+        let output = ApkRepositoryReader::apk_index(&service, "x86_64")
             .await
             .unwrap();
 
-        // Decompress gzip
-        let mut gz_decoder = GzDecoder::new(tar_gz_bytes.as_slice());
-        let mut tar_bytes = Vec::new();
-        gz_decoder.read_to_end(&mut tar_bytes).unwrap();
+        // First gzip stream: the signature tar, with no end-of-archive blocks.
+        let mut rest = output.as_slice();
+        let mut sig_tar = Vec::new();
+        flate2::bufread::GzDecoder::new(&mut rest)
+            .read_to_end(&mut sig_tar)
+            .unwrap();
+        // apk's tar reader rejects empty numeric fields: uid/gid must be octal text.
+        let assert_apk_header = |header: &tar::Header| {
+            let raw = header.as_bytes();
+            assert_eq!(&raw[108..116], b"0000000\0", "uid");
+            assert_eq!(&raw[116..124], b"0000000\0", "gid");
+            assert_eq!(header.entry_type(), tar::EntryType::Regular);
+        };
+        let header = tar::Header::from_byte_slice(&sig_tar[..512]);
+        assert_apk_header(header);
+        assert_eq!(
+            header.path().unwrap().to_string_lossy(),
+            ".SIGN.RSA256.test.rsa.pub"
+        );
+        let sig_len = header.size().unwrap() as usize;
+        assert_eq!(sig_tar.len(), 512 + sig_len.next_multiple_of(512));
+        let signature = &sig_tar[512..512 + sig_len];
 
-        // Parse tar
+        // The signature covers the raw bytes of the second gzip stream, as apk checks it.
+        let index_gz = rest;
+        let verifying_key =
+            rsa::pkcs1v15::VerifyingKey::<sha2::Sha256>::new(private_key.to_public_key());
+        rsa::signature::Verifier::verify(
+            &verifying_key,
+            index_gz,
+            &rsa::pkcs1v15::Signature::try_from(signature).unwrap(),
+        )
+        .unwrap();
+
+        let mut tar_bytes = Vec::new();
+        GzDecoder::new(index_gz)
+            .read_to_end(&mut tar_bytes)
+            .unwrap();
         let mut archive = tar::Archive::new(tar_bytes.as_slice());
         let mut entries: Vec<(String, String)> = Vec::new();
         for entry in archive.entries().unwrap() {
@@ -2462,15 +2507,13 @@ SHA256:
             entry.read_to_string(&mut content).unwrap();
             entries.push((path, content));
         }
-
-        // Should have exactly 2 entries: signature and APKINDEX
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].0, ".SIGN.RSA.test.rsa.pub");
-        assert_eq!(entries[0].1, "FAKESIG");
-        assert_eq!(entries[1].0, "APKINDEX");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, "APKINDEX");
+        assert_apk_header(tar::Header::from_byte_slice(&tar_bytes[..512]));
+        assert!(entries[0].1.ends_with("\n\n"));
 
         // Verify APKINDEX content only contains x86_64 packages
-        let index_content = &entries[1].1;
+        let index_content = &entries[0].1;
         assert!(index_content.contains("P:busybox"));
         assert!(index_content.contains("V:1.37.0-r14"));
         assert!(index_content.contains("A:x86_64"));
