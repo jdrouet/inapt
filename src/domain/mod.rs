@@ -90,7 +90,7 @@ where
 
         let scanned_release_ids = self
             .release_tracker
-            .filter_scanned_releases(&release_identifiers)
+            .filter_scanned_releases(prelude::ReleaseKind::Apk, &release_identifiers)
             .await?;
 
         let unscanned_releases: Vec<_> = releases
@@ -118,7 +118,7 @@ where
             .collect();
 
         self.release_tracker
-            .mark_releases_scanned(&releases_to_mark)
+            .mark_releases_scanned(prelude::ReleaseKind::Apk, &releases_to_mark)
             .await?;
 
         let mut packages_to_insert = Vec::new();
@@ -491,7 +491,7 @@ where
         // Batch query: find which releases are already scanned
         let scanned_release_ids = self
             .release_tracker
-            .filter_scanned_releases(&release_identifiers)
+            .filter_scanned_releases(prelude::ReleaseKind::Deb, &release_identifiers)
             .await?;
 
         // Filter to only unscanned releases
@@ -522,7 +522,7 @@ where
 
         // Mark releases as scanned first (required for foreign key constraint on packages)
         self.release_tracker
-            .mark_releases_scanned(&releases_to_mark)
+            .mark_releases_scanned(prelude::ReleaseKind::Deb, &releases_to_mark)
             .await?;
 
         // Process all assets and collect packages
@@ -1037,10 +1037,10 @@ SHA256:
         // No releases are scanned yet
         mock_release_tracker
             .expect_filter_scanned_releases()
-            .returning(|_| Box::pin(async { Ok(std::collections::HashSet::new()) }));
+            .returning(|_, _| Box::pin(async { Ok(std::collections::HashSet::new()) }));
         mock_release_tracker
             .expect_mark_releases_scanned()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(()) }));
 
         let mut mock_package_store = MockPackageStore::new();
         // Asset 2 is already cached
@@ -1587,7 +1587,7 @@ SHA256:
         // Release 1 is already scanned, release 2 is not
         mock_release_tracker
             .expect_filter_scanned_releases()
-            .returning(|_| {
+            .returning(|_, _| {
                 // Return release 1 as already scanned
                 let mut scanned = std::collections::HashSet::new();
                 scanned.insert(1u64);
@@ -1596,9 +1596,9 @@ SHA256:
         // mark_releases_scanned should only be called for release 2
         mock_release_tracker
             .expect_mark_releases_scanned()
-            .withf(|releases| releases.len() == 1 && releases[0].release_id == 2)
+            .withf(|_, releases| releases.len() == 1 && releases[0].release_id == 2)
             .times(1)
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(()) }));
 
         let mut mock_package_store = MockPackageStore::new();
         // find_package_by_asset_id should be called for the new package (release 2, asset 200)
@@ -2025,10 +2025,10 @@ SHA256:
         let mut mock_release_tracker = MockReleaseTracker::new();
         mock_release_tracker
             .expect_filter_scanned_releases()
-            .returning(|_| Box::pin(async { Ok(std::collections::HashSet::new()) }));
+            .returning(|_, _| Box::pin(async { Ok(std::collections::HashSet::new()) }));
         mock_release_tracker
             .expect_mark_releases_scanned()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(()) }));
 
         let mut mock_apk_extractor = MockApkMetadataExtractor::new();
         mock_apk_extractor
@@ -2142,16 +2142,16 @@ SHA256:
         let mut mock_release_tracker = MockReleaseTracker::new();
         mock_release_tracker
             .expect_filter_scanned_releases()
-            .returning(|_| {
+            .returning(|_, _| {
                 let mut scanned = std::collections::HashSet::new();
                 scanned.insert(1u64);
                 Box::pin(async move { Ok(scanned) })
             });
         mock_release_tracker
             .expect_mark_releases_scanned()
-            .withf(|releases| releases.len() == 1 && releases[0].release_id == 2)
+            .withf(|_, releases| releases.len() == 1 && releases[0].release_id == 2)
             .times(1)
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(()) }));
 
         let mut mock_apk_extractor = MockApkMetadataExtractor::new();
         mock_apk_extractor
@@ -2245,10 +2245,10 @@ SHA256:
         let mut mock_release_tracker = MockReleaseTracker::new();
         mock_release_tracker
             .expect_filter_scanned_releases()
-            .returning(|_| Box::pin(async { Ok(std::collections::HashSet::new()) }));
+            .returning(|_, _| Box::pin(async { Ok(std::collections::HashSet::new()) }));
         mock_release_tracker
             .expect_mark_releases_scanned()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(()) }));
 
         let mock_apk_extractor = MockApkMetadataExtractor::new();
         // extract_metadata should NOT be called because the package is cached

@@ -220,18 +220,36 @@ pub struct ReleaseIdentifier {
     pub release_id: u64,
 }
 
+/// Package format a release is scanned for; each format is tracked independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReleaseKind {
+    Deb,
+    Apk,
+}
+
+impl ReleaseKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Deb => "deb",
+            Self::Apk => "apk",
+        }
+    }
+}
+
 /// Tracks which GitHub releases have been scanned.
 pub trait ReleaseTracker: Send + Sync + 'static {
     /// Check which releases from a batch have already been scanned.
     /// Returns a set of release IDs that have been scanned.
     fn filter_scanned_releases(
         &self,
+        kind: ReleaseKind,
         releases: &[ReleaseIdentifier],
     ) -> impl Future<Output = anyhow::Result<std::collections::HashSet<u64>>> + Send;
 
     /// Mark multiple releases as scanned in a single batch operation.
     fn mark_releases_scanned(
         &self,
+        kind: ReleaseKind,
         releases: &[ReleaseIdentifier],
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
@@ -247,11 +265,13 @@ mockall::mock! {
     impl ReleaseTracker for ReleaseTracker {
         fn filter_scanned_releases(
             &self,
+            kind: ReleaseKind,
             releases: &[ReleaseIdentifier],
         ) -> impl Future<Output = anyhow::Result<std::collections::HashSet<u64>>> + Send;
 
         fn mark_releases_scanned(
             &self,
+            kind: ReleaseKind,
             releases: &[ReleaseIdentifier],
         ) -> impl Future<Output = anyhow::Result<()>> + Send;
     }

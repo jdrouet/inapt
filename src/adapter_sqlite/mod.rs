@@ -42,7 +42,11 @@ const SQL_INSERT_RELEASE_METADATA: &str = r#"
 
 const SQL_INSERT_ARCHITECTURE_METADATA: &str = "INSERT INTO architecture_metadata (release_metadata_id, name, plain_md5, plain_sha256, plain_size, compressed_md5, compressed_sha256, compressed_size) ";
 
-const SQL_SELECT_GITHUB_RELEASES_BATCH: &str = "SELECT id FROM github_releases WHERE ";
+const SQL_SELECT_SCANNED_RELEASES_BATCH: &str =
+    "SELECT release_id FROM scanned_releases WHERE kind = ";
+
+const SQL_INSERT_SCANNED_RELEASES_BATCH: &str =
+    "INSERT OR IGNORE INTO scanned_releases (kind, release_id, repo_owner, repo_name, scanned_at) ";
 
 const SQL_INSERT_GITHUB_RELEASES_BATCH: &str =
     "INSERT OR IGNORE INTO github_releases (id, repo_owner, repo_name, scanned_at) ";
@@ -588,7 +592,7 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
         skip(self, releases),
         fields(
             db.system = "sqlite",
-            db.statement = SQL_SELECT_GITHUB_RELEASES_BATCH,
+            db.statement = SQL_SELECT_SCANNED_RELEASES_BATCH,
             span.type = "sql",
             otel.kind = "client",
             releases.count = releases.len()
@@ -596,6 +600,7 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
     )]
     async fn filter_scanned_releases(
         &self,
+        kind: crate::domain::prelude::ReleaseKind,
         releases: &[crate::domain::prelude::ReleaseIdentifier],
     ) -> anyhow::Result<std::collections::HashSet<u64>> {
         if releases.is_empty() {
@@ -603,7 +608,9 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
         }
 
         // Build a query with OR conditions for each release
-        let mut query_builder = sqlx::QueryBuilder::new(SQL_SELECT_GITHUB_RELEASES_BATCH);
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_SELECT_SCANNED_RELEASES_BATCH);
+        query_builder.push_bind(kind.as_str());
+        query_builder.push(" AND (");
 
         for (i, release) in releases.iter().enumerate() {
             if i > 0 {
@@ -613,10 +620,11 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
             query_builder.push_bind(&release.repo_owner);
             query_builder.push(" AND repo_name = ");
             query_builder.push_bind(&release.repo_name);
-            query_builder.push(" AND id = ");
+            query_builder.push(" AND release_id = ");
             query_builder.push_bind(release.release_id as i64);
             query_builder.push(")");
         }
+        query_builder.push(")");
 
         let rows: Vec<(i64,)> = query_builder.build_query_as().fetch_all(&self.pool).await?;
 
@@ -635,6 +643,7 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
     )]
     async fn mark_releases_scanned(
         &self,
+        kind: crate::domain::prelude::ReleaseKind,
         releases: &[crate::domain::prelude::ReleaseIdentifier],
     ) -> anyhow::Result<()> {
         if releases.is_empty() {
@@ -652,7 +661,20 @@ impl crate::domain::prelude::ReleaseTracker for SqliteStorage {
                 .push_bind(&now);
         });
 
-        query_builder.build().execute(&self.pool).await?;
+        // github_releases is the FK target for assets, so it must be written first.
+        let mut tx = self.pool.begin().await?;
+        query_builder.build().execute(&mut *tx).await?;
+
+        let mut query_builder = sqlx::QueryBuilder::new(SQL_INSERT_SCANNED_RELEASES_BATCH);
+        query_builder.push_values(releases, |mut b, release| {
+            b.push_bind(kind.as_str())
+                .push_bind(release.release_id as i64)
+                .push_bind(&release.repo_owner)
+                .push_bind(&release.repo_name)
+                .push_bind(&now);
+        });
+        query_builder.build().execute(&mut *tx).await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -922,32 +944,82 @@ mod tests {
         ];
 
         // Releases should not be scanned initially
-        let scanned = storage.filter_scanned_releases(&releases).await.unwrap();
+        let scanned = storage
+            .filter_scanned_releases(crate::domain::prelude::ReleaseKind::Deb, &releases)
+            .await
+            .unwrap();
         assert!(scanned.is_empty());
 
         // Mark release 123 as scanned
         storage
-            .mark_releases_scanned(&[releases[0].clone()])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[releases[0].clone()],
+            )
             .await
             .unwrap();
 
         // Release 123 should now be scanned, 456 should not
-        let scanned = storage.filter_scanned_releases(&releases).await.unwrap();
+        let scanned = storage
+            .filter_scanned_releases(crate::domain::prelude::ReleaseKind::Deb, &releases)
+            .await
+            .unwrap();
         assert_eq!(scanned.len(), 1);
         assert!(scanned.contains(&123));
         assert!(!scanned.contains(&456));
 
         // Mark release 456 as scanned too
         storage
-            .mark_releases_scanned(&[releases[1].clone()])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[releases[1].clone()],
+            )
             .await
             .unwrap();
 
         // Both should now be scanned
-        let scanned = storage.filter_scanned_releases(&releases).await.unwrap();
+        let scanned = storage
+            .filter_scanned_releases(crate::domain::prelude::ReleaseKind::Deb, &releases)
+            .await
+            .unwrap();
         assert_eq!(scanned.len(), 2);
         assert!(scanned.contains(&123));
         assert!(scanned.contains(&456));
+    }
+
+    #[tokio::test]
+    async fn should_track_scanned_releases_per_kind() {
+        use crate::domain::prelude::{ReleaseIdentifier, ReleaseKind};
+
+        let storage = create_test_storage().await;
+        let releases = vec![ReleaseIdentifier {
+            repo_owner: "owner".to_string(),
+            repo_name: "repo".to_string(),
+            release_id: 123,
+        }];
+
+        storage
+            .mark_releases_scanned(ReleaseKind::Deb, &releases)
+            .await
+            .unwrap();
+
+        let scanned = storage
+            .filter_scanned_releases(ReleaseKind::Apk, &releases)
+            .await
+            .unwrap();
+        assert!(scanned.is_empty(), "deb scan must not hide apk assets");
+
+        storage
+            .mark_releases_scanned(ReleaseKind::Apk, &releases)
+            .await
+            .unwrap();
+        for kind in [ReleaseKind::Deb, ReleaseKind::Apk] {
+            let scanned = storage
+                .filter_scanned_releases(kind, &releases)
+                .await
+                .unwrap();
+            assert!(scanned.contains(&123), "{kind:?} should be scanned");
+        }
     }
 
     #[tokio::test]
@@ -958,11 +1030,14 @@ mod tests {
 
         // First mark the release as scanned (creates the release record)
         storage
-            .mark_releases_scanned(&[ReleaseIdentifier {
-                repo_owner: "owner".to_string(),
-                repo_name: "repo".to_string(),
-                release_id: 1,
-            }])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 1,
+                }],
+            )
             .await
             .unwrap();
 
@@ -992,18 +1067,21 @@ mod tests {
 
         // First mark the releases as scanned (creates the release records)
         storage
-            .mark_releases_scanned(&[
-                ReleaseIdentifier {
-                    repo_owner: "owner".to_string(),
-                    repo_name: "repo".to_string(),
-                    release_id: 1,
-                },
-                ReleaseIdentifier {
-                    repo_owner: "owner".to_string(),
-                    repo_name: "repo".to_string(),
-                    release_id: 2,
-                },
-            ])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[
+                    ReleaseIdentifier {
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        release_id: 1,
+                    },
+                    ReleaseIdentifier {
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        release_id: 2,
+                    },
+                ],
+            )
             .await
             .unwrap();
 
@@ -1173,11 +1251,14 @@ mod tests {
         let storage = create_test_storage().await;
 
         storage
-            .mark_releases_scanned(&[ReleaseIdentifier {
-                repo_owner: "owner".to_string(),
-                repo_name: "repo".to_string(),
-                release_id: 1,
-            }])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 1,
+                }],
+            )
             .await
             .unwrap();
 
@@ -1227,18 +1308,21 @@ mod tests {
         let storage = create_test_storage().await;
 
         storage
-            .mark_releases_scanned(&[
-                ReleaseIdentifier {
-                    repo_owner: "owner".to_string(),
-                    repo_name: "repo".to_string(),
-                    release_id: 1,
-                },
-                ReleaseIdentifier {
-                    repo_owner: "owner".to_string(),
-                    repo_name: "repo".to_string(),
-                    release_id: 2,
-                },
-            ])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[
+                    ReleaseIdentifier {
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        release_id: 1,
+                    },
+                    ReleaseIdentifier {
+                        repo_owner: "owner".to_string(),
+                        repo_name: "repo".to_string(),
+                        release_id: 2,
+                    },
+                ],
+            )
             .await
             .unwrap();
 
@@ -1262,11 +1346,14 @@ mod tests {
         let storage = create_test_storage().await;
 
         storage
-            .mark_releases_scanned(&[ReleaseIdentifier {
-                repo_owner: "owner".to_string(),
-                repo_name: "repo".to_string(),
-                release_id: 1,
-            }])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 1,
+                }],
+            )
             .await
             .unwrap();
 
@@ -1330,11 +1417,14 @@ mod tests {
         let storage = create_test_storage().await;
 
         storage
-            .mark_releases_scanned(&[ReleaseIdentifier {
-                repo_owner: "owner".to_string(),
-                repo_name: "repo".to_string(),
-                release_id: 1,
-            }])
+            .mark_releases_scanned(
+                crate::domain::prelude::ReleaseKind::Deb,
+                &[ReleaseIdentifier {
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    release_id: 1,
+                }],
+            )
             .await
             .unwrap();
 
