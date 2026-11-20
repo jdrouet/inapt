@@ -36,11 +36,11 @@ hostname = "0.4"
 hex = "0.4"
 http = "1.4"
 md-5 = "0.11"
-opentelemetry = { version = "0.32", default-features = false }
-opentelemetry-appender-tracing = { version = "0.32", default-features = false }
-opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "tls-ring", "tls-roots"] }
-opentelemetry-semantic-conventions = { version = "0.32", default-features = false, features = ["semconv_experimental"] }
-opentelemetry_sdk = { version = "0.32", default-features = false, features = ["logs", "metrics", "rt-tokio", "trace"] }
+opentelemetry = { version = "0.33", default-features = false }
+opentelemetry-appender-tracing = { version = "0.33", default-features = false }
+opentelemetry-otlp = { version = "0.33", features = ["grpc-tonic", "tls-ring", "tls-roots"] }
+opentelemetry-semantic-conventions = { version = "0.33", default-features = false, features = ["semconv_experimental"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["logs", "metrics", "rt-tokio", "trace"] }
 rsa = { version = "0.9", features = ["pem"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
 reqwest-middleware = { version = "0.5", features = ["query"] }
@@ -58,7 +58,7 @@ tokio = { version = "1.48", default-features = false, features = ["fs", "macros"
 toml = "1.0"
 tower-http = { version = "0.7", features = ["trace"] }
 tracing = { version = "0.1" }
-tracing-opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
+tracing-opentelemetry = { version = "0.34", default-features = false, features = ["metrics"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
 xz2 = "0.1"      # for .xz
 zstd = "0.14"    # for .zst
