@@ -29,7 +29,7 @@ anyhow = { version = "1.0" }
 ar = "0.9"
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = ["http2", "tokio"] }
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["now", "serde"] }
 flate2 = "1"     # for .gz
 futures = "0.3"
