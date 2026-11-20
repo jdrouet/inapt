@@ -464,10 +464,11 @@ mockall::mock! {
 
 /// Signs data with an RSA key for APK repository index signing.
 pub trait RsaSigner: Send + Sync + 'static {
-    /// Sign raw bytes and return the RSA signature.
+    /// Sign raw bytes with RSA PKCS#1 v1.5 over SHA-256 and return the signature.
     fn sign(&self, data: &[u8]) -> anyhow::Result<Vec<u8>>;
 
-    /// The key filename used in the `.SIGN.RSA.{name}` tar entry.
+    /// The key filename used in the `.SIGN.RSA256.{name}` tar entry; it must match
+    /// the public key file name under `/etc/apk/keys/` on clients.
     fn key_name(&self) -> &str;
 }
 
