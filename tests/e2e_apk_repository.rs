@@ -157,7 +157,8 @@ fn walk_directory(path: &std::path::Path, prefix: &str) -> Result<Vec<(String, V
 fn create_test_config(inapt_port: u16) -> String {
     format!(
         r#"[core]
-repositories = ["jdrouet/inapt"]
+# Small upstream project publishing unsigned nfpm-built .apk assets.
+repositories = ["goreleaser/example"]
 
 [github]
 base_url = "https://api.github.com"
@@ -406,6 +407,10 @@ if grep -E "(WARNING|ERROR).*{inapt_hostname}" /tmp/apk-update.log; then
     echo "apk update reported warnings"
     exit 1
 fi
+
+echo "Installing a package from inapt..."
+apk add example 2>&1
+apk info -e example
 
 echo "=== APK client test completed ==="
 "#
